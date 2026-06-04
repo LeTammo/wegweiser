@@ -1,0 +1,1077 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import ReactFlow, {
+  Background,
+  Controls,
+  MiniMap,
+  MarkerType,
+} from 'reactflow';
+import type { Node, Edge } from 'reactflow';
+import 'reactflow/dist/style.css';
+
+import {
+  Plus,
+  Trash2,
+  AlertTriangle,
+  RotateCcw,
+  Sparkles,
+  Zap,
+  ShieldAlert,
+  Clock,
+  Navigation,
+  FolderOpen,
+  MapPin,
+  TrendingUp,
+} from 'lucide-react';
+
+import { ConnectionNode } from './ConnectionNode';
+
+const API_URL = 'http://localhost:3001/api';
+
+interface DBJourney {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+interface DBConnection {
+  id: string;
+  journey_id: string;
+  train_number: string;
+  type: string;
+  from_station: string;
+  to_station: string;
+  departure_time: string;
+  arrival_time: string;
+  delay: number;
+}
+
+interface DBEdge {
+  fromConnectionId: string;
+  toConnectionId: string;
+  transferMinutes: number;
+  effectiveTransferMinutes: number;
+  alternativeCount: number;
+  rating: 'Good' | 'Medium' | 'Critical' | 'Impossible';
+}
+
+interface Path {
+  connections: DBConnection[];
+  totalScheduledDurationMinutes: number;
+  totalEffectiveDurationMinutes: number;
+  averageRobustnessScore: number;
+  isBroken: boolean;
+  brokenAtConnectionId?: string;
+  departureTime: string;
+  arrivalTime: string;
+  effectiveArrivalTime: string;
+}
+
+interface Analysis {
+  connections: DBConnection[];
+  edges: DBEdge[];
+  robustnessScores: Record<string, number>;
+  paths: Path[];
+  fastestRoute: Path | null;
+  safestRoute: Path | null;
+  criticalTransfersCount: number;
+}
+
+const nodeTypes = {
+  connectionNode: ConnectionNode,
+};
+
+const trainTypes = ['ICE', 'IC', 'EC', 'RE', 'RB', 'S-Bahn', 'Bus', 'Tram'];
+
+export default function App() {
+  // Journey state
+  const [journeys, setJourneys] = useState<DBJourney[]>([]);
+  const [activeJourneyId, setActiveJourneyId] = useState<string>('');
+  const [journeyName, setJourneyName] = useState<string>('');
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+
+  // Station filtering state
+  const [stations, setStations] = useState<string[]>([]);
+  const [startStation, setStartStation] = useState<string>('');
+  const [endStation, setEndStation] = useState<string>('');
+
+  // Selected route highlight
+  const [highlightedRouteType, setHighlightedRouteType] = useState<'fastest' | 'safest' | null>(null);
+
+  // Form states
+  const [trainNumber, setTrainNumber] = useState('');
+  const [type, setType] = useState('ICE');
+  const [fromStation, setFromStation] = useState('');
+  const [toStation, setToStation] = useState('');
+  const [departureTime, setDepartureTime] = useState('');
+  const [arrivalTime, setArrivalTime] = useState('');
+  const [editingConnId, setEditingConnId] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Flow nodes and edges state
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+
+  // Fetch initial journeys list
+  useEffect(() => {
+    fetchJourneys();
+  }, []);
+
+  // Fetch all journeys
+  const fetchJourneys = async () => {
+    try {
+      const res = await fetch(`${API_URL}/journeys`);
+      const data = await res.json();
+      setJourneys(data);
+      if (data.length > 0 && !activeJourneyId) {
+        setActiveJourneyId(data[0].id);
+      }
+    } catch (err) {
+      console.error('Failed to fetch journeys', err);
+    }
+  };
+
+  // Fetch specific journey details
+  const fetchJourneyDetails = useCallback(async (id: string, start?: string, end?: string) => {
+    if (!id) return;
+    try {
+      let url = `${API_URL}/journeys/${id}`;
+      const params = new URLSearchParams();
+      if (start) params.append('startStation', start);
+      if (end) params.append('endStation', end);
+      if (params.toString()) url += `?${params.toString()}`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.analysis) {
+        setAnalysis(data.analysis);
+        
+        // Extract all stations from connection list
+        const uniqueStations = new Set<string>();
+        data.analysis.connections.forEach((c: DBConnection) => {
+          uniqueStations.add(c.from_station);
+          uniqueStations.add(c.to_station);
+        });
+        const stationList = Array.from(uniqueStations).sort();
+        setStations(stationList);
+
+        // Auto select start and end stations if they aren't set
+        if (!start && !end && data.analysis.connections.length > 0) {
+          // Identify natural sources and sinks
+          const origins = new Set(data.analysis.connections.map((c: any) => c.from_station));
+          const destinations = new Set(data.analysis.connections.map((c: any) => c.to_station));
+          
+          const naturalStarts = Array.from(origins).filter(st => !destinations.has(st));
+          const naturalEnds = Array.from(destinations).filter(st => !origins.has(st));
+
+          if (naturalStarts.length > 0) setStartStation(naturalStarts[0]);
+          if (naturalEnds.length > 0) setEndStation(naturalEnds[0]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch journey details', err);
+    }
+  }, []);
+
+  // Sync details on active journey or station filter change
+  useEffect(() => {
+    if (activeJourneyId) {
+      fetchJourneyDetails(activeJourneyId, startStation, endStation);
+    } else {
+      setAnalysis(null);
+      setStations([]);
+      setStartStation('');
+      setEndStation('');
+    }
+  }, [activeJourneyId, startStation, endStation, fetchJourneyDetails]);
+
+  // Handle delay simulation slider adjustments
+  const handleDelayChange = async (connId: string, delay: number) => {
+    if (!activeJourneyId) return;
+    try {
+      const res = await fetch(`${API_URL}/journeys/${activeJourneyId}/connections/${connId}/delay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delay }),
+      });
+      const data = await res.json();
+      if (data.analysis) {
+        setAnalysis(data.analysis);
+      }
+    } catch (err) {
+      console.error('Failed to update delay', err);
+    }
+  };
+
+  // Convert connection and edges to React Flow representations
+  useEffect(() => {
+    if (!analysis) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
+
+    const { connections, edges: apiEdges, fastestRoute, safestRoute } = analysis;
+
+    // 1. Identify all unique stations and build incoming lists
+    const stationsSet = new Set<string>();
+    connections.forEach(c => {
+      stationsSet.add(c.from_station.trim().toLowerCase());
+      stationsSet.add(c.to_station.trim().toLowerCase());
+    });
+    const stationsList = Array.from(stationsSet);
+
+    const stationIncoming = new Map<string, string[]>();
+    stationsList.forEach(s => stationIncoming.set(s, []));
+    connections.forEach(c => {
+      const from = c.from_station.trim().toLowerCase();
+      const to = c.to_station.trim().toLowerCase();
+      if (!stationIncoming.get(to)?.includes(from)) {
+        stationIncoming.get(to)?.push(from);
+      }
+    });
+
+    // 2. Compute station levels (stages) topologically
+    const stationLevels: Record<string, number> = {};
+    const getStationLevel = (st: string, visited = new Set<string>()): number => {
+      if (stationLevels[st] !== undefined) return stationLevels[st];
+      const parents = stationIncoming.get(st) || [];
+      if (parents.length === 0) {
+        stationLevels[st] = 0;
+        return 0;
+      }
+      
+      visited.add(st);
+      const parentLevels: number[] = [];
+      for (const p of parents) {
+        if (!visited.has(p)) {
+          parentLevels.push(getStationLevel(p, new Set(visited)));
+        }
+      }
+      visited.delete(st);
+      
+      const maxParentLvl = parentLevels.length > 0 ? Math.max(...parentLevels) : 0;
+      stationLevels[st] = 1 + maxParentLvl;
+      return stationLevels[st];
+    };
+
+    stationsList.forEach(st => getStationLevel(st));
+
+    // 3. Compute spans and sort connections to assign layout order
+    const connectionSpans = connections.map(conn => {
+      const colFrom = stationLevels[conn.from_station.trim().toLowerCase()] || 0;
+      const colTo = stationLevels[conn.to_station.trim().toLowerCase()] || 0;
+      const span = Math.max(1, colTo - colFrom);
+      return { conn, colFrom, span };
+    });
+
+    // Group and sort by departure times to keep vertical sequences chronological
+    connectionSpans.sort((a, b) => {
+      if (a.colFrom !== b.colFrom) return a.colFrom - b.colFrom;
+      const fromComp = a.conn.from_station.localeCompare(b.conn.from_station);
+      if (fromComp !== 0) return fromComp;
+      const toComp = a.conn.to_station.localeCompare(b.conn.to_station);
+      if (toComp !== 0) return toComp;
+      return new Date(a.conn.departure_time).getTime() - new Date(b.conn.departure_time).getTime();
+    });
+
+    // 4. Reserve grid slots to avoid overlaps
+    // grid[row][col] = occupied boolean
+    const grid: boolean[][] = [];
+    const connectionPositions: Record<string, { col: number; row: number; span: number }> = {};
+
+    for (const item of connectionSpans) {
+      const { conn, colFrom, span } = item;
+      
+      let row = 0;
+      while (true) {
+        while (grid.length <= row) {
+          grid.push(new Array(stationsList.length + 5).fill(false));
+        }
+
+        // Verify if row is vacant in all spanned columns
+        let isFree = true;
+        for (let c = colFrom; c < colFrom + span; c++) {
+          if (grid[row][c]) {
+            isFree = false;
+            break;
+          }
+        }
+
+        if (isFree) {
+          // Block the slots
+          for (let c = colFrom; c < colFrom + span; c++) {
+            grid[row][c] = true;
+          }
+          connectionPositions[conn.id] = { col: colFrom, row, span };
+          break;
+        }
+        row++;
+      }
+    }
+
+    // 5. Generate React Flow Nodes
+    const flowNodes: Node[] = connections.map(conn => {
+      const pos = connectionPositions[conn.id] || { col: 0, row: 0, span: 1 };
+      
+      // Column pitch 560px — leaves ~300px of horizontal edge space per hop
+      // Card base width kept narrow (260px) so edges dominate horizontally
+      const COL_W = 560;
+      const width = 260 + (pos.span - 1) * COL_W;
+
+      // Highlight status
+      const isHighlightedFastest = highlightedRouteType === 'fastest' && 
+        !!fastestRoute?.connections.some(c => c.id === conn.id);
+      
+      const isHighlightedSafest = highlightedRouteType === 'safest' && 
+        !!safestRoute?.connections.some(c => c.id === conn.id);
+
+      return {
+        id: conn.id,
+        type: 'connectionNode',
+        // Row pitch 160px — cards 44px tall, 116px pure edge space per row
+        position: { x: 50 + pos.col * COL_W, y: 50 + pos.row * 160 },
+        style: { width: `${width}px` },
+        data: {
+          id: conn.id,
+          trainNumber: conn.train_number,
+          type: conn.type,
+          fromStation: conn.from_station,
+          toStation: conn.to_station,
+          departureTime: conn.departure_time,
+          arrivalTime: conn.arrival_time,
+          isHighlightedFastest,
+          isHighlightedSafest,
+        },
+      };
+    });
+
+    // 6. Generate React Flow Edges
+    const formatBuffer = (mins: number): string => {
+      if (mins < 60) return `${mins}m`;
+      const hours = (mins / 60).toFixed(1);
+      return `${hours.endsWith('.0') ? hours.slice(0, -2) : hours}h`;
+    };
+
+    const flowEdges: Edge[] = apiEdges.map(e => {
+      let inFastestPath = false;
+      if (highlightedRouteType === 'fastest' && fastestRoute) {
+        const conns = fastestRoute.connections;
+        for (let i = 0; i < conns.length - 1; i++) {
+          if (conns[i].id === e.fromConnectionId && conns[i+1].id === e.toConnectionId) {
+            inFastestPath = true;
+            break;
+          }
+        }
+      }
+
+      let inSafestPath = false;
+      if (highlightedRouteType === 'safest' && safestRoute) {
+        const conns = safestRoute.connections;
+        for (let i = 0; i < conns.length - 1; i++) {
+          if (conns[i].id === e.fromConnectionId && conns[i+1].id === e.toConnectionId) {
+            inSafestPath = true;
+            break;
+          }
+        }
+      }
+
+      const isEdgeHighlighted = inFastestPath || inSafestPath;
+
+      // Style edge according to transfer minutes/status
+      let strokeColor = '#94a3b8'; // default gray
+      let strokeDash = '';
+      let isAnimated = isEdgeHighlighted;
+
+      if (e.rating === 'Impossible') {
+        strokeColor = '#f43f5e'; // rose-500
+        strokeDash = '5,5';
+        isAnimated = false;
+      } else if (e.rating === 'Critical') {
+        strokeColor = '#f43f5e'; // red-500
+        strokeDash = '2,2';
+      } else if (e.rating === 'Medium') {
+        strokeColor = '#eab308'; // yellow-500
+      } else if (e.rating === 'Good') {
+        strokeColor = '#10b981'; // emerald-500
+      }
+
+      if (isEdgeHighlighted && e.rating !== 'Impossible') {
+        strokeColor = highlightedRouteType === 'fastest' ? '#0ea5e9' : '#059669';
+      }
+
+      return {
+        id: `e-${e.fromConnectionId}-${e.toConnectionId}`,
+        source: e.fromConnectionId,
+        target: e.toConnectionId,
+        animated: isAnimated && e.rating !== 'Impossible',
+        // Transfer time is the PRIMARY info — large, bold, prominent label
+        label: formatBuffer(e.effectiveTransferMinutes),
+        labelBgPadding: [8, 5],
+        labelBgBorderRadius: 8,
+        labelBgStyle: { fill: '#ffffff', stroke: strokeColor, strokeWidth: 1.5, fillOpacity: 0.97 },
+        labelStyle: { fill: strokeColor, fontWeight: 800, fontSize: '13px', letterSpacing: '-0.3px' },
+        style: {
+          stroke: strokeColor,
+          strokeWidth: isEdgeHighlighted ? 5 : 3,
+          strokeDasharray: strokeDash,
+        },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 22,
+          height: 22,
+          color: strokeColor,
+        },
+      };
+    });
+
+    setNodes(flowNodes);
+    setEdges(flowEdges);
+  }, [analysis, highlightedRouteType]);
+
+  // Create new journey
+  const handleCreateJourney = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!journeyName.trim()) return;
+    try {
+      const res = await fetch(`${API_URL}/journeys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: journeyName }),
+      });
+      const data = await res.json();
+      if (data.id) {
+        setJourneys([data, ...journeys]);
+        setActiveJourneyId(data.id);
+        setJourneyName('');
+      }
+    } catch (err) {
+      console.error('Failed to create journey', err);
+    }
+  };
+
+  // Delete journey
+  const handleDeleteJourney = async () => {
+    if (!activeJourneyId) return;
+    if (!window.confirm('Möchtest du diese Reise wirklich löschen?')) return;
+    try {
+      await fetch(`${API_URL}/journeys/${activeJourneyId}`, { method: 'DELETE' });
+      const remaining = journeys.filter(j => j.id !== activeJourneyId);
+      setJourneys(remaining);
+      setActiveJourneyId(remaining.length > 0 ? remaining[0].id : '');
+    } catch (err) {
+      console.error('Failed to delete journey', err);
+    }
+  };
+
+  // Reset simulated delays to 0 minutes
+  const handleResetDelays = async () => {
+    if (!analysis || !activeJourneyId) return;
+    try {
+      // Loop through connections with delays and reset them
+      const delayedConns = analysis.connections.filter(c => c.delay > 0);
+      for (const conn of delayedConns) {
+        await fetch(`${API_URL}/journeys/${activeJourneyId}/connections/${conn.id}/delay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ delay: 0 }),
+        });
+      }
+      fetchJourneyDetails(activeJourneyId, startStation, endStation);
+    } catch (err) {
+      console.error('Failed to reset delays', err);
+    }
+  };
+
+  // Submit Connection form (Add / Edit)
+  const handleConnectionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!activeJourneyId) return;
+    if (!trainNumber || !fromStation || !toStation || !departureTime || !arrivalTime) {
+      setFormError('Bitte alle Felder ausfüllen.');
+      return;
+    }
+
+    // Format times into valid ISO dates (arbitrary date, say today, but with user-specified times)
+    // To support clean time comparison, we ensure they are parsed as actual date-times.
+    // If user enters HH:MM, we append today's date prefix
+    const today = new Date().toISOString().split('T')[0];
+    const depIso = departureTime.includes('T') ? departureTime : `${today}T${departureTime}:00`;
+    const arrIso = arrivalTime.includes('T') ? arrivalTime : `${today}T${arrivalTime}:00`;
+
+    const payload = {
+      trainNumber,
+      type,
+      fromStation: fromStation.trim(),
+      toStation: toStation.trim(),
+      departureTime: depIso,
+      arrivalTime: arrIso,
+    };
+
+    try {
+      const url = editingConnId
+        ? `${API_URL}/journeys/${activeJourneyId}/connections/${editingConnId}`
+        : `${API_URL}/journeys/${activeJourneyId}/connections`;
+
+      const method = editingConnId ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setFormError(data.error || 'Ein Fehler ist aufgetreten.');
+        return;
+      }
+
+      // Reset form
+      setTrainNumber('');
+      setFromStation('');
+      setToStation('');
+      setDepartureTime('');
+      setArrivalTime('');
+      setEditingConnId(null);
+
+      if (data.analysis) {
+        setAnalysis(data.analysis);
+        // Refresh stations listing
+        const uniqueStations = new Set<string>();
+        data.analysis.connections.forEach((c: DBConnection) => {
+          uniqueStations.add(c.from_station);
+          uniqueStations.add(c.to_station);
+        });
+        setStations(Array.from(uniqueStations).sort());
+      }
+    } catch (err) {
+      setFormError('Verbindung zum Server fehlgeschlagen.');
+      console.error(err);
+    }
+  };
+
+  // Trigger edit mode for connection
+  const startEditConnection = (conn: DBConnection) => {
+    setEditingConnId(conn.id);
+    setTrainNumber(conn.train_number);
+    setType(conn.type);
+    setFromStation(conn.from_station);
+    setToStation(conn.to_station);
+    
+    // Extract HH:MM from ISO timestamp for input matching
+    const getHHMM = (iso: string) => {
+      try {
+        const d = new Date(iso);
+        return d.toTimeString().split(' ')[0].substring(0, 5);
+      } catch {
+        return '';
+      }
+    };
+    setDepartureTime(getHHMM(conn.departure_time));
+    setArrivalTime(getHHMM(conn.arrival_time));
+  };
+
+  // Delete connection
+  const handleDeleteConnection = async (connId: string) => {
+    if (!activeJourneyId) return;
+    if (!window.confirm('Verbindung wirklich löschen?')) return;
+    try {
+      const res = await fetch(`${API_URL}/journeys/${activeJourneyId}/connections/${connId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.analysis) {
+        setAnalysis(data.analysis);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-screen w-screen bg-slate-50 text-slate-800">
+      
+      {/* 1. Elegant Header */}
+      <header className="flex justify-between items-center px-6 py-4 bg-white border-b border-slate-200/80 shadow-sm z-10">
+        <div className="flex items-center space-x-3">
+          <div className="bg-gradient-to-tr from-violet-600 to-indigo-600 text-white p-2.5 rounded-xl shadow-md">
+            <TrendingUp size={22} className="transform rotate-45" />
+          </div>
+          <div>
+            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Rail Decision Planner</h1>
+            <p className="text-xs text-slate-400 font-medium">Verbindungsnetzwerke & Robustheit bewerten</p>
+          </div>
+        </div>
+
+        {/* Journey Manager Dropdown */}
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 bg-slate-100/80 px-3 py-1.5 rounded-lg border border-slate-200/50">
+            <FolderOpen size={16} className="text-slate-500" />
+            <select
+              value={activeJourneyId}
+              onChange={(e) => {
+                setActiveJourneyId(e.target.value);
+                setStartStation('');
+                setEndStation('');
+                setHighlightedRouteType(null);
+              }}
+              className="bg-transparent font-semibold text-slate-700 text-sm focus:outline-none cursor-pointer"
+            >
+              {journeys.length === 0 ? (
+                <option value="">Keine Reisen vorhanden</option>
+              ) : (
+                journeys.map((j) => (
+                  <option key={j.id} value={j.id}>
+                    {j.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          {activeJourneyId && (
+            <button
+              onClick={handleDeleteJourney}
+              className="p-2 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-100 transition"
+              title="Aktive Reise löschen"
+            >
+              <Trash2 size={18} />
+            </button>
+          )}
+
+          {/* Quick Create Journey */}
+          <form onSubmit={handleCreateJourney} className="flex items-center space-x-2">
+            <input
+              type="text"
+              placeholder="Neue Reise..."
+              value={journeyName}
+              onChange={(e) => setJourneyName(e.target.value)}
+              className="px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 text-slate-700"
+            />
+            <button
+              type="submit"
+              className="bg-violet-600 hover:bg-violet-700 text-white p-2 rounded-lg shadow-sm transition"
+            >
+              <Plus size={16} />
+            </button>
+          </form>
+        </div>
+      </header>
+
+      {/* Main Grid Layout */}
+      <main className="flex-1 flex overflow-hidden">
+        
+        {/* LEFT COLUMN: Controls, Forms, and Metrics */}
+        <aside className="w-[420px] bg-white border-r border-slate-200 flex flex-col h-full overflow-y-auto p-5 space-y-6 z-10 shadow-sm">
+          
+          {/* A. Dynamic Journey Stats */}
+          {analysis && (
+            <div className="bg-slate-50/80 border border-slate-100 p-4 rounded-xl space-y-3">
+              <h3 className="text-xs uppercase font-extrabold tracking-wider text-slate-400 flex items-center justify-between">
+                <span>Aktuelle Kennzahlen</span>
+                {analysis.criticalTransfersCount > 0 && (
+                  <span className="flex items-center text-rose-600 bg-rose-50 border border-rose-200 text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse-subtle">
+                    <ShieldAlert size={10} className="mr-1" />
+                    {analysis.criticalTransfersCount} Kritisch
+                  </span>
+                )}
+              </h3>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white p-3 rounded-lg border border-slate-200/50 shadow-sm flex flex-col justify-between">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase">Schnellste Route</span>
+                  {analysis.fastestRoute ? (
+                    <div>
+                      <p className="text-xl font-bold text-slate-900 mt-1">
+                        {analysis.fastestRoute.isBroken ? (
+                          <span className="text-rose-500">Unterbrochen</span>
+                        ) : (
+                          `${Math.floor(analysis.fastestRoute.totalEffectiveDurationMinutes / 60)}h ${analysis.fastestRoute.totalEffectiveDurationMinutes % 60}m`
+                        )}
+                      </p>
+                      <p className="text-[10px] font-medium text-slate-400 mt-0.5 truncate">
+                        Soll: {Math.floor(analysis.fastestRoute.totalScheduledDurationMinutes / 60)}h {analysis.fastestRoute.totalScheduledDurationMinutes % 60}m
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-semibold text-slate-400 mt-1">Kein Pfad</p>
+                  )}
+                </div>
+
+                <div className="bg-white p-3 rounded-lg border border-slate-200/50 shadow-sm flex flex-col justify-between">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase">Sicherste Robustheit</span>
+                  {analysis.safestRoute ? (
+                    <div>
+                      <p className="text-xl font-bold text-slate-900 mt-1">
+                        {analysis.safestRoute.averageRobustnessScore} / 100
+                      </p>
+                      <p className="text-[10px] font-medium text-slate-400 mt-0.5 truncate">
+                        {analysis.safestRoute.connections.length} Verbindungen
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-semibold text-slate-400 mt-1">Kein Pfad</p>
+                  )}
+                </div>
+              </div>
+
+              {analysis.connections.some(c => c.delay > 0) && (
+                <button
+                  onClick={handleResetDelays}
+                  className="w-full flex items-center justify-center space-x-2 text-xs bg-slate-200/80 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-lg transition"
+                >
+                  <RotateCcw size={12} />
+                  <span>Verzögerungen zurücksetzen</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* B. Destination Routing Analyzer */}
+          {stations.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-xs uppercase font-extrabold tracking-wider text-slate-400 flex items-center space-x-1.5">
+                <Navigation size={12} />
+                <span>Routen-Analyse</span>
+              </h3>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Startbahnhof</label>
+                  <select
+                    value={startStation}
+                    onChange={(e) => setStartStation(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-sm font-semibold text-slate-700 bg-white cursor-pointer mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+                  >
+                    <option value="">Start wählen...</option>
+                    {stations.map(st => (
+                      <option key={`start-${st}`} value={st}>{st}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Zielbahnhof</label>
+                  <select
+                    value={endStation}
+                    onChange={(e) => setEndStation(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-sm font-semibold text-slate-700 bg-white cursor-pointer mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+                  >
+                    <option value="">Ziel wählen...</option>
+                    {stations.map(st => (
+                      <option key={`end-${st}`} value={st}>{st}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Path List & Highlights */}
+              {analysis && analysis.paths.length > 0 && startStation && endStation && (
+                <div className="space-y-2 mt-3">
+                  <p className="text-[11px] font-bold text-slate-400">Gefundene Reiserouten:</p>
+                  
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => setHighlightedRouteType(highlightedRouteType === 'fastest' ? null : 'fastest')}
+                      className={`flex-1 flex items-center justify-center space-x-1.5 text-xs font-bold py-2 px-3 border rounded-lg transition ${
+                        highlightedRouteType === 'fastest'
+                          ? 'bg-sky-50 border-sky-300 text-sky-700 font-extrabold shadow-sm'
+                          : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      <Zap size={13} />
+                      <span>Schnellste</span>
+                    </button>
+                    
+                    <button
+                      onClick={() => setHighlightedRouteType(highlightedRouteType === 'safest' ? null : 'safest')}
+                      className={`flex-1 flex items-center justify-center space-x-1.5 text-xs font-bold py-2 px-3 border rounded-lg transition ${
+                        highlightedRouteType === 'safest'
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-700 font-extrabold shadow-sm'
+                          : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      <Sparkles size={13} />
+                      <span>Sicherste</span>
+                    </button>
+                  </div>
+
+                  {highlightedRouteType && (
+                    <div className="bg-slate-50 border border-slate-200/60 p-3 rounded-lg text-xs space-y-1">
+                      {highlightedRouteType === 'fastest' && analysis.fastestRoute && (
+                        <>
+                          <div className="flex justify-between items-center font-bold text-sky-800">
+                            <span>Schnellste Route:</span>
+                            {analysis.fastestRoute.isBroken ? (
+                              <span className="text-rose-500 uppercase text-[9px] animate-pulse font-black">Unterbrochen</span>
+                            ) : (
+                              <span>{analysis.fastestRoute.totalEffectiveDurationMinutes} Min.</span>
+                            )}
+                          </div>
+                          <p className="text-slate-500 font-medium leading-relaxed">
+                            {analysis.fastestRoute.connections.map(c => `${c.type} ${c.train_number}`).join(' → ')}
+                          </p>
+                        </>
+                      )}
+
+                      {highlightedRouteType === 'safest' && analysis.safestRoute && (
+                        <>
+                          <div className="flex justify-between items-center font-bold text-emerald-800">
+                            <span>Sicherste Route:</span>
+                            <span>Robustheit: {analysis.safestRoute.averageRobustnessScore}/100</span>
+                          </div>
+                          <p className="text-slate-500 font-medium leading-relaxed">
+                            {analysis.safestRoute.connections.map(c => `${c.type} ${c.train_number}`).join(' → ')}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* C. Connections List */}
+          {analysis && analysis.connections.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-xs uppercase font-extrabold tracking-wider text-slate-400 flex items-center space-x-1.5">
+                <MapPin size={12} />
+                <span>Verbindungen ({analysis.connections.length})</span>
+              </h3>
+
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {analysis.connections.map(c => {
+                  const formatTimeStr = (iso: string) => {
+                    const date = new Date(iso);
+                    return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                  };
+                  return (
+                    <div 
+                      key={`list-conn-${c.id}`} 
+                      className={`flex justify-between items-center border border-slate-200 rounded-lg p-2 text-xs transition-colors ${
+                        editingConnId === c.id ? 'bg-violet-50 border-violet-300' : 'bg-white'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-slate-800">
+                          {c.type} {c.train_number}
+                        </p>
+                        <p className="text-slate-500 font-medium truncate">
+                          {c.from_station} ({formatTimeStr(c.departure_time)}) → {c.to_station} ({formatTimeStr(c.arrival_time)})
+                        </p>
+                      </div>
+                      <div className="flex space-x-1.5 ml-2">
+                        <button
+                          onClick={() => startEditConnection(c)}
+                          className="px-2 py-1 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded font-bold transition"
+                        >
+                          Bearbeiten
+                        </button>
+                        <button
+                          onClick={() => handleDeleteConnection(c.id)}
+                          className="p-1 text-rose-500 hover:bg-rose-50 rounded transition"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* D. Add / Edit Connection Form */}
+          {activeJourneyId && (
+            <form onSubmit={handleConnectionSubmit} className="border-t border-slate-100 pt-5 space-y-4">
+              <h3 className="text-xs uppercase font-extrabold tracking-wider text-slate-400">
+                {editingConnId ? 'Verbindung Bearbeiten' : 'Verbindung Hinzufügen'}
+              </h3>
+
+              {formError && (
+                <div className="bg-rose-50 border border-rose-200 text-rose-600 text-xs font-semibold p-3 rounded-lg flex items-start space-x-2">
+                  <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Zugnummer / ID</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="z.B. 705"
+                    value={trainNumber}
+                    onChange={(e) => setTrainNumber(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Typ</label>
+                  <select
+                    value={type}
+                    onChange={(e) => setType(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold bg-white"
+                  >
+                    {trainTypes.map(t => (
+                      <option key={`type-${t}`} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Startbahnhof</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="z.B. Berlin Hbf"
+                    value={fromStation}
+                    onChange={(e) => setFromStation(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Zielbahnhof</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="z.B. Rostock Hbf"
+                    value={toStation}
+                    onChange={(e) => setToStation(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Abfahrt (HH:MM)</label>
+                  <input
+                    type="time"
+                    required
+                    value={departureTime}
+                    onChange={(e) => setDepartureTime(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Ankunft (HH:MM)</label>
+                  <input
+                    type="time"
+                    required
+                    value={arrivalTime}
+                    onChange={(e) => setArrivalTime(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="flex space-x-2 pt-2">
+                <button
+                  type="submit"
+                  className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-bold py-2 rounded-lg shadow-sm transition flex items-center justify-center space-x-1.5"
+                >
+                  <Plus size={16} />
+                  <span>{editingConnId ? 'Verbindung Aktualisieren' : 'Verbindung Hinzufügen'}</span>
+                </button>
+                {editingConnId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingConnId(null);
+                      setTrainNumber('');
+                      setFromStation('');
+                      setToStation('');
+                      setDepartureTime('');
+                      setArrivalTime('');
+                      setFormError(null);
+                    }}
+                    className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg font-bold hover:bg-slate-50 transition"
+                  >
+                    Abbrechen
+                  </button>
+                )}
+              </div>
+            </form>
+          )}
+        </aside>
+
+        {/* CENTER/RIGHT CANVAS: React Flow Diagram */}
+        <section className="flex-1 h-full bg-slate-50 relative flex flex-col">
+          {activeJourneyId ? (
+            analysis && analysis.connections.length === 0 ? (
+              <div className="absolute inset-0 flex flex-col justify-center items-center text-center p-8 bg-slate-50/50">
+                <div className="bg-white border border-slate-200 shadow-sm p-8 rounded-2xl max-w-md space-y-4">
+                  <div className="mx-auto w-12 h-12 rounded-xl bg-violet-50 border border-violet-100 flex items-center justify-center text-violet-600">
+                    <Clock size={24} />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900">Keine Verbindungen vorhanden</h3>
+                  <p className="text-sm text-slate-500 font-medium">
+                    Füge links die ersten Zugverbindungen hinzu. Das System wird Anschlüsse, Umstiegszeiten und Robustheitsscores automatisch berechnen und hier darstellen.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  nodeTypes={nodeTypes}
+                  fitView
+                  minZoom={0.2}
+                  maxZoom={1.5}
+                >
+                  <Background color="#cbd5e1" gap={20} size={1.2} />
+                  <Controls />
+                  <MiniMap nodeStrokeWidth={3} zoomable pannable />
+                </ReactFlow>
+
+                {/* Bottom Legend */}
+                <div className="absolute bottom-6 left-6 bg-white/95 border border-slate-200/80 shadow-md p-4 rounded-xl space-y-3 z-10 max-w-sm text-xs font-semibold backdrop-blur-sm">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Umstiegszeit-Farbcodierung (Pfeile)</p>
+                    <div className="flex space-x-4 mt-1.5">
+                      <span className="flex items-center"><span className="w-3.5 h-3.5 rounded-full bg-emerald-500 mr-1.5"></span>Grün (&ge; 15 min)</span>
+                      <span className="flex items-center"><span className="w-3.5 h-3.5 rounded-full bg-amber-500 mr-1.5"></span>Gelb (8-14 min)</span>
+                      <span className="flex items-center"><span className="w-3.5 h-3.5 rounded-full bg-rose-500 mr-1.5"></span>Rot (&le; 7 min)</span>
+                    </div>
+                  </div>
+                  <div className="border-t border-slate-100 pt-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Verbindungs-Typen (Header)</p>
+                    <div className="flex flex-wrap gap-2 mt-1.5 max-w-[280px]">
+                      <span className="flex items-center text-[10px] bg-zinc-900 text-white px-2 py-0.5 rounded">ICE</span>
+                      <span className="flex items-center text-[10px] bg-slate-600 text-white px-2 py-0.5 rounded">IC / EC</span>
+                      <span className="flex items-center text-[10px] bg-stone-500 text-white px-2 py-0.5 rounded">RE</span>
+                      <span className="flex items-center text-[10px] bg-stone-300 text-stone-800 px-2 py-0.5 rounded">RB</span>
+                      <span className="flex items-center text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded">S-Bahn</span>
+                      <span className="flex items-center text-[10px] bg-violet-600 text-white px-2 py-0.5 rounded">Bus</span>
+                      <span className="flex items-center text-[10px] bg-red-500 text-white px-2 py-0.5 rounded">Tram</span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )
+          ) : (
+            <div className="absolute inset-0 flex flex-col justify-center items-center text-center p-8">
+              <div className="bg-white border border-slate-200 shadow-sm p-8 rounded-2xl max-w-sm space-y-3">
+                <div className="mx-auto w-12 h-12 rounded-xl bg-violet-50 border border-violet-100 flex items-center justify-center text-violet-600">
+                  <FolderOpen size={24} />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">Reise auswählen</h3>
+                <p className="text-sm text-slate-500 font-medium">
+                  Wähle oben eine Reise aus oder lege eine neue an, um mit der Routenplanung zu beginnen.
+                </p>
+              </div>
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+}
