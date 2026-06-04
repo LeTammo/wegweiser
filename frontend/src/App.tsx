@@ -27,7 +27,7 @@ import {
 import { ConnectionNode } from './ConnectionNode';
 import { ConnectionEdge } from './ConnectionEdge';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 interface DBJourney {
   id: string;

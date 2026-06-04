@@ -1,15 +1,19 @@
 import express from 'express';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
+import dotenv from 'dotenv';
 import { getDb } from './db';
 import { analyzeJourney, computeEdges, hasCycle } from './engine';
 import { Connection } from './types';
+
+dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || '127.0.0.1';
 
 // GET /api/journeys - List all journeys
 app.get('/api/journeys', async (req, res) => {
@@ -307,6 +311,6 @@ app.post('/api/journeys/:id/connections/:connId/delay', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Wegweiser backend is listening at http://localhost:${PORT}`);
+app.listen(Number(PORT), HOST, () => {
+  console.log(`Wegweiser backend is listening at http://${HOST}:${PORT}`);
 });

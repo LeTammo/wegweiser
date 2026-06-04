@@ -3,8 +3,10 @@ node_modules/
 backend/node_modules/
 backend/rail_planner.db
 backend/dist
+backend/.env
 
 frontend/node_modules/
 frontend/dist
+frontend/.env
 
 .idea

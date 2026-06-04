@@ -36,6 +36,19 @@ npm run dev
 - **Frontend**: Accessible at [http://localhost:5173](http://localhost:5173) (Vite)
 - **Backend API**: Runs on [http://localhost:3001](http://localhost:3001)
 
+### Configuration
+
+You can configure the host and port using environment variables.
+
+**Backend (`backend/.env`):**
+Create a `.env` file in the `backend` directory.
+- `PORT`: The port the backend server listens on (default: `3001`)
+- `HOST`: The host the backend server binds to (default: `127.0.0.1`)
+
+**Frontend (`frontend/.env`):**
+Create a `.env` file in the `frontend` directory.
+- `VITE_API_URL`: The URL of the backend API (default: `http://localhost:3001/api`, this must match the backend's host and port)
+
 ### Production
 
 1. Build the frontend
@@ -53,18 +66,18 @@ npm run dev
 
 Alternatively, if you want to fast host it without a reverse proxy:
 
-Build and start the backend:
-```bash
-cd backend
-npm run build
-npm start
-```
-Build the frontend and run the preview server:
-```bash
-cd frontend
-npm run build
-npm run preview
-```
+1. Build and start the backend:
+   ```bash
+   cd backend
+   npm run build
+   npm start
+   ```
+2. Build the frontend and run the preview server:
+   ```bash
+   cd frontend
+   npm run build
+   npm run preview
+   ```
 
 ## Tech Stack
 
