@@ -53,7 +53,12 @@ function parseDbDateTime(raw: string): Date {
  * The raw value arrives already URL-decoded.
  */
 function parseLineString(raw: string): { trainType: string | null; trainNumber: string | null } {
-  const s = raw.trim();
+  let s = raw.trim();
+  try {
+    s = decodeURIComponent(s).trim();
+  } catch {
+    // fallback to original if decode fails
+  }
 
   if (!s) return { trainType: null, trainNumber: null };
 
@@ -101,7 +106,12 @@ function parseLineString(raw: string): { trainType: string | null; trainNumber: 
  */
 function extractStationName(descriptor: string): string {
   const match = descriptor.match(/O=([^@]+)/);
-  return match ? match[1] : descriptor;
+  let name = match ? match[1] : descriptor;
+  try {
+    return decodeURIComponent(name.replace(/\+/g, ' ')).trim();
+  } catch {
+    return name.replace(/\+/g, ' ').trim();
+  }
 }
 
 // ---------------------------------------------------------------------------

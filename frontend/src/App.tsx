@@ -582,12 +582,19 @@ export default function App() {
       return;
     }
 
-    // Format times into valid ISO dates (arbitrary date, say today, but with user-specified times)
-    // To support clean time comparison, we ensure they are parsed as actual date-times.
-    // If user enters HH:MM, we append today's date prefix
-    const today = new Date().toISOString().split('T')[0];
-    const depIso = departureTime.includes('T') ? departureTime : `${today}T${departureTime}:00`;
-    const arrIso = arrivalTime.includes('T') ? arrivalTime : `${today}T${arrivalTime}:00`;
+    // Format times into valid ISO dates.
+    // Use the date of the connection being edited, or the journey's general date, or today.
+    const existingConn = editingConnId ? analysis?.connections.find(c => c.id === editingConnId) : null;
+    let datePrefix = new Date().toISOString().split('T')[0];
+    
+    if (existingConn) {
+      datePrefix = existingConn.departure_time.split('T')[0];
+    } else if (analysis && analysis.connections.length > 0) {
+      datePrefix = analysis.connections[0].departure_time.split('T')[0];
+    }
+
+    const depIso = departureTime.includes('T') ? departureTime : `${datePrefix}T${departureTime}:00`;
+    const arrIso = arrivalTime.includes('T') ? arrivalTime : `${datePrefix}T${arrivalTime}:00`;
 
     const payload = {
       trainNumber,

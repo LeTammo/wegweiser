@@ -196,10 +196,10 @@ app.post('/api/journeys/:id/connections', async (req, res) => {
     const newConn: Connection = {
       id: uuidv4(),
       journey_id: journeyId,
-      train_number: trainNumber,
-      type,
-      from_station: fromStation,
-      to_station: toStation,
+      train_number: trainNumber.trim(),
+      type: type.trim(),
+      from_station: fromStation.trim(),
+      to_station: toStation.trim(),
       departure_time: new Date(departureTime).toISOString(),
       arrival_time: new Date(arrivalTime).toISOString(),
       delay: 0
@@ -356,10 +356,10 @@ app.put('/api/journeys/:id/connections/:connId', async (req, res) => {
     // Build the updated connection
     const updatedConn: Connection = {
       ...existingConn,
-      train_number: trainNumber,
-      type,
-      from_station: fromStation,
-      to_station: toStation,
+      train_number: trainNumber.trim(),
+      type: type.trim(),
+      from_station: fromStation.trim(),
+      to_station: toStation.trim(),
       departure_time: new Date(departureTime).toISOString(),
       arrival_time: new Date(arrivalTime).toISOString()
     };
