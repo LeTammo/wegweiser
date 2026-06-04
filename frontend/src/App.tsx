@@ -11,10 +11,8 @@ import {
   Plus,
   Trash2,
   AlertTriangle,
-  RotateCcw,
   Sparkles,
   Zap,
-  ShieldAlert,
   Clock,
   Navigation,
   FolderOpen,
@@ -22,6 +20,11 @@ import {
   TrendingUp,
   Settings as SettingsIcon,
   X,
+  Menu,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 import { ConnectionNode } from './ConnectionNode';
@@ -116,6 +119,11 @@ export default function App() {
     return DEFAULT_SETTINGS;
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isLegendOpen, setIsLegendOpen] = useState(false);
+  const [isCreatingJourney, setIsCreatingJourney] = useState(false);
+  const [isConnectionsListOpen, setIsConnectionsListOpen] = useState(false);
+  const [isAddConnectionFormOpen, setIsAddConnectionFormOpen] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('bring-me-there-settings', JSON.stringify(settings));
@@ -351,10 +359,8 @@ export default function App() {
     const flowNodes: Node[] = connections.map(conn => {
       const pos = connectionPositions[conn.id] || { col: 0, row: 0, span: 1 };
       
-      // Column pitch 560px — leaves ~300px of horizontal edge space per hop
-      // Card base width kept narrow (260px) so edges dominate horizontally
-      const COL_W = 380;
-      const width = 200 + (pos.span - 1) * COL_W;
+      const COL_W_NODES = 320;
+      const width = 180 + (pos.span - 1) * COL_W_NODES;
 
       // Highlight status
       const isHighlightedFastest = highlightedRouteType === 'fastest' && 
@@ -368,8 +374,7 @@ export default function App() {
       return {
         id: conn.id,
         type: 'connectionNode',
-        // Row pitch 160px — cards 44px tall, 116px pure edge space per row
-        position: { x: 50 + pos.col * COL_W, y: 50 + pos.row * 80 },
+        position: { x: 30 + pos.col * COL_W_NODES, y: 30 + pos.row * 70 },
         style: { width: `${width}px` },
         data: {
           id: conn.id,
@@ -462,12 +467,12 @@ export default function App() {
       let labelY = undefined;
 
       if (fromPos && toPos) {
-        const COL_W = 560;
-        const ROW_H = 160;
-        const x1 = 50 + fromPos.col * COL_W + (260 + (fromPos.span - 1) * COL_W); // right side of source
-        const x2 = 50 + toPos.col * COL_W; // left side of target
-        const y1 = 50 + fromPos.row * ROW_H + 22; // center Y of source
-        const y2 = 50 + toPos.row * ROW_H + 22; // center Y of target
+        const COL_W_LAYOUT = 320;
+        const ROW_H_LAYOUT = 70;
+        const x1 = 30 + fromPos.col * COL_W_LAYOUT + (180 + (fromPos.span - 1) * COL_W_LAYOUT); // right side of source
+        const x2 = 30 + toPos.col * COL_W_LAYOUT; // left side of target
+        const y1 = 30 + fromPos.row * ROW_H_LAYOUT + 22; // center Y of source
+        const y2 = 30 + toPos.row * ROW_H_LAYOUT + 22; // center Y of target
         
         labelX = (x1 + x2) / 2;
         labelY = (y1 + y2) / 2 + labelYOffset;
@@ -519,6 +524,7 @@ export default function App() {
         setJourneys([data, ...journeys]);
         setActiveJourneyId(data.id);
         setJourneyName('');
+        setIsCreatingJourney(false);
       }
     } catch (err) {
       console.error('Failed to create journey', err);
@@ -534,27 +540,9 @@ export default function App() {
       const remaining = journeys.filter(j => j.id !== activeJourneyId);
       setJourneys(remaining);
       setActiveJourneyId(remaining.length > 0 ? remaining[0].id : '');
+      setIsSettingsOpen(false);
     } catch (err) {
       console.error('Failed to delete journey', err);
-    }
-  };
-
-  // Reset simulated delays to 0 minutes
-  const handleResetDelays = async () => {
-    if (!analysis || !activeJourneyId) return;
-    try {
-      // Loop through connections with delays and reset them
-      const delayedConns = analysis.connections.filter(c => c.delay > 0);
-      for (const conn of delayedConns) {
-        await fetch(`${API_URL}/journeys/${activeJourneyId}/connections/${conn.id}/delay`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ delay: 0 }),
-        });
-      }
-      fetchJourneyDetails(activeJourneyId, startStation, endStation);
-    } catch (err) {
-      console.error('Failed to reset delays', err);
     }
   };
 
@@ -648,6 +636,7 @@ export default function App() {
     };
     setDepartureTime(getHHMM(conn.departure_time));
     setArrivalTime(getHHMM(conn.arrival_time));
+    setIsAddConnectionFormOpen(true);
   };
 
   // Delete connection
@@ -668,154 +657,114 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-slate-50 text-slate-800">
+    <div className="flex flex-col h-screen w-screen bg-slate-50 text-slate-800 overflow-hidden">
       
-      {/* 1. Elegant Header */}
-      <header className="flex justify-between items-center px-6 py-4 bg-white border-b border-slate-200/80 shadow-sm z-10">
-        <div className="flex items-center space-x-3">
-          <div className="bg-gradient-to-tr from-violet-600 to-indigo-600 text-white p-2.5 rounded-xl shadow-md">
-            <TrendingUp size={22} className="transform rotate-45" />
-          </div>
-          <div>
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Wegweiser</h1>
-            <p className="text-xs text-slate-400 font-medium">Plane deine Verbindung</p>
-          </div>
-        </div>
-
-        {/* Journey Manager Dropdown */}
-        <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-2 bg-slate-100/80 px-3 py-1.5 rounded-lg border border-slate-200/50">
-            <FolderOpen size={16} className="text-slate-500" />
-            <select
-              value={activeJourneyId}
-              onChange={(e) => {
-                setActiveJourneyId(e.target.value);
-                setStartStation('');
-                setEndStation('');
-                setHighlightedRouteType(null);
-              }}
-              className="bg-transparent font-semibold text-slate-700 text-sm focus:outline-none cursor-pointer"
-            >
-              {journeys.length === 0 ? (
-                <option value="">Keine Reisen vorhanden</option>
-              ) : (
-                journeys.map((j) => (
-                  <option key={j.id} value={j.id}>
-                    {j.name}
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
-
-          {activeJourneyId && (
-            <div className="flex items-center space-x-1">
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="p-2 text-slate-500 hover:text-slate-600 hover:bg-slate-100 rounded-lg border border-transparent hover:border-slate-200 transition"
-                title="Einstellungen"
-              >
-                <SettingsIcon size={18} />
-              </button>
-              <button
-                onClick={handleDeleteJourney}
-                className="p-2 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-100 transition"
-                title="Aktive Reise löschen"
-              >
-                <Trash2 size={18} />
-              </button>
-            </div>
-          )}
-
-          {/* Quick Create Journey */}
-          <form onSubmit={handleCreateJourney} className="flex items-center space-x-2">
-            <input
-              type="text"
-              placeholder="Neue Reise..."
-              value={journeyName}
-              onChange={(e) => setJourneyName(e.target.value)}
-              className="px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 text-slate-700"
-            />
-            <button
-              type="submit"
-              className="bg-violet-600 hover:bg-violet-700 text-white p-2 rounded-lg shadow-sm transition"
-            >
-              <Plus size={16} />
-            </button>
-          </form>
-        </div>
-      </header>
+      {/* Burger Menu Button (Only visible when sidebar is closed) */}
+      {!isSidebarOpen && (
+        <button 
+          onClick={() => setIsSidebarOpen(true)}
+          className="fixed top-4 left-4 z-40 p-2 bg-white text-slate-500 hover:text-violet-600 shadow-md rounded-lg transition"
+          title="Sidebar öffnen"
+        >
+          <Menu size={22} />
+        </button>
+      )}
 
       {/* Main Grid Layout */}
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex overflow-hidden relative">
         
-        {/* LEFT COLUMN: Controls, Forms, and Metrics */}
-        <aside className="w-[420px] bg-white border-r border-slate-200 flex flex-col h-full overflow-y-auto p-5 space-y-6 z-10 shadow-sm">
-          
-          {/* A. Dynamic Journey Stats */}
-          {analysis && (
-            <div className="bg-slate-50/80 border border-slate-100 p-4 rounded-xl space-y-3">
-              <h3 className="text-xs uppercase font-extrabold tracking-wider text-slate-400 flex items-center justify-between">
-                <span>Aktuelle Kennzahlen</span>
-                {analysis.criticalTransfersCount > 0 && (
-                  <span className="flex items-center text-rose-600 bg-rose-50 border border-rose-200 text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse-subtle">
-                    <ShieldAlert size={10} className="mr-1" />
-                    {analysis.criticalTransfersCount} Kritisch
-                  </span>
-                )}
-              </h3>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white p-3 rounded-lg border border-slate-200/50 shadow-sm flex flex-col justify-between">
-                  <span className="text-[10px] font-semibold text-slate-400 uppercase">Schnellste Route</span>
-                  {analysis.fastestRoute ? (
-                    <div>
-                      <p className="text-xl font-bold text-slate-900 mt-1">
-                        {analysis.fastestRoute.isBroken ? (
-                          <span className="text-rose-500">Unterbrochen</span>
-                        ) : (
-                          `${Math.floor(analysis.fastestRoute.totalEffectiveDurationMinutes / 60)}h ${analysis.fastestRoute.totalEffectiveDurationMinutes % 60}m`
-                        )}
-                      </p>
-                      <p className="text-[10px] font-medium text-slate-400 mt-0.5 truncate">
-                        Soll: {Math.floor(analysis.fastestRoute.totalScheduledDurationMinutes / 60)}h {analysis.fastestRoute.totalScheduledDurationMinutes % 60}m
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-sm font-semibold text-slate-400 mt-1">Kein Pfad</p>
-                  )}
-                </div>
+        {/* LEFT COLUMN: Sidebar */}
+        <aside className={`
+          fixed md:relative z-30 h-full bg-white border-r border-slate-200 flex flex-col transition-all duration-300 ease-in-out shadow-xl md:shadow-none
+          ${isSidebarOpen ? 'translate-x-0 w-full xs:w-[320px] sm:w-[420px]' : '-translate-x-full w-0 md:w-0 overflow-hidden'}
+        `}>
+          {/* Sidebar Header with Close Button and Brand */}
+          <div className="px-5 py-6 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="bg-gradient-to-tr from-violet-600 to-indigo-600 text-white p-2 rounded-xl shadow-md">
+                <TrendingUp size={20} className="transform rotate-45" />
+              </div>
+              <div>
+                <h1 className="text-lg font-extrabold text-slate-900 tracking-tight leading-tight">Wegweiser</h1>
+                <p className="text-[10px] text-slate-400 font-medium">Plane deine Verbindung</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setIsSidebarOpen(false)}
+              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition"
+            >
+              <ChevronLeft size={20} />
+            </button>
+          </div>
 
-                <div className="bg-white p-3 rounded-lg border border-slate-200/50 shadow-sm flex flex-col justify-between">
-                  <span className="text-[10px] font-semibold text-slate-400 uppercase">Sicherste Robustheit</span>
-                  {analysis.safestRoute ? (
-                    <div>
-                      <p className="text-xl font-bold text-slate-900 mt-1">
-                        {analysis.safestRoute.averageRobustnessScore} / 100
-                      </p>
-                      <p className="text-[10px] font-medium text-slate-400 mt-0.5 truncate">
-                        {analysis.safestRoute.connections.length} Verbindungen
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-sm font-semibold text-slate-400 mt-1">Kein Pfad</p>
-                  )}
-                </div>
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6">
+            {/* 1. Aktive Reise Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs uppercase font-extrabold tracking-wider text-slate-400 flex items-center space-x-1.5">
+                  <FolderOpen size={12} />
+                  <span>Aktive Reise</span>
+                </h3>
+                <button
+                  onClick={() => setIsCreatingJourney(!isCreatingJourney)}
+                  className={`p-1 rounded-md transition ${isCreatingJourney ? 'bg-rose-50 text-rose-500' : 'bg-violet-50 text-violet-600 hover:bg-violet-100'}`}
+                  title="Neue Reise erstellen"
+                >
+                  {isCreatingJourney ? <X size={14} /> : <Plus size={14} />}
+                </button>
               </div>
 
-              {analysis.connections.some(c => c.delay > 0) && (
-                <button
-                  onClick={handleResetDelays}
-                  className="w-full flex items-center justify-center space-x-2 text-xs bg-slate-200/80 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-lg transition"
-                >
-                  <RotateCcw size={12} />
-                  <span>Verzögerungen zurücksetzen</span>
-                </button>
+              {isCreatingJourney && (
+                <form onSubmit={handleCreateJourney} className="flex items-center space-x-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Name der Reise..."
+                    value={journeyName}
+                    onChange={(e) => setJourneyName(e.target.value)}
+                    className="flex-1 px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 text-slate-700"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-violet-600 hover:bg-violet-700 text-white p-2 rounded-lg shadow-sm transition"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </form>
               )}
-            </div>
-          )}
 
-          {/* B. Destination Routing Analyzer */}
+              <div className="flex items-center space-x-2">
+                <select
+                  value={activeJourneyId}
+                  onChange={(e) => {
+                    setActiveJourneyId(e.target.value);
+                    setStartStation('');
+                    setEndStation('');
+                    setHighlightedRouteType(null);
+                  }}
+                  className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 flex-1 focus:outline-none focus:ring-2 focus:ring-violet-500/10"
+                >
+                  {journeys.length === 0 ? (
+                    <option value="">Keine Reisen</option>
+                  ) : (
+                    journeys.map((j) => (
+                      <option key={j.id} value={j.id}>{j.name}</option>
+                    ))
+                  )}
+                </select>
+                {activeJourneyId && (
+                  <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="p-2 text-slate-500 hover:text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 transition"
+                    title="Einstellungen"
+                  >
+                    <SettingsIcon size={18} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* B. Destination Routing Analyzer */}
           {stations.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-xs uppercase font-extrabold tracking-wider text-slate-400 flex items-center space-x-1.5">
@@ -922,170 +871,214 @@ export default function App() {
           {/* C. Connections List */}
           {analysis && analysis.connections.length > 0 && (
             <div className="space-y-3">
-              <h3 className="text-xs uppercase font-extrabold tracking-wider text-slate-400 flex items-center space-x-1.5">
-                <MapPin size={12} />
-                <span>Verbindungen ({analysis.connections.length})</span>
-              </h3>
+              <button 
+                onClick={() => setIsConnectionsListOpen(!isConnectionsListOpen)}
+                className="w-full text-xs uppercase font-extrabold tracking-wider text-slate-400 flex items-center justify-between hover:text-slate-600 transition"
+              >
+                <div className="flex items-center space-x-1.5">
+                  <MapPin size={12} />
+                  <span>Verbindungen ({analysis.connections.length})</span>
+                </div>
+                {isConnectionsListOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
 
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                {analysis.connections.map(c => {
-                  const formatTimeStr = (iso: string) => {
-                    const date = new Date(iso);
-                    return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-                  };
-                  return (
-                    <div 
-                      key={`list-conn-${c.id}`} 
-                      className={`flex justify-between items-center border border-slate-200 rounded-lg p-2 text-xs transition-colors ${
-                        editingConnId === c.id ? 'bg-violet-50 border-violet-300' : 'bg-white'
-                      }`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="font-bold text-slate-800">
-                          {c.type} {c.train_number}
-                        </p>
-                        <p className="text-slate-500 font-medium truncate">
-                          {c.from_station} ({formatTimeStr(c.departure_time)}) → {c.to_station} ({formatTimeStr(c.arrival_time)})
-                        </p>
+              {isConnectionsListOpen && (
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                  {analysis.connections.map(c => {
+                    const formatTimeStr = (iso: string) => {
+                      const date = new Date(iso);
+                      return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                    };
+                    return (
+                      <div 
+                        key={`list-conn-${c.id}`} 
+                        className={`flex justify-between items-center border border-slate-200 rounded-lg p-2 text-xs transition-colors ${
+                          editingConnId === c.id ? 'bg-violet-50 border-violet-300' : 'bg-white'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-slate-800">
+                            {c.type} {c.train_number}
+                          </p>
+                          <p className="text-slate-500 font-medium truncate">
+                            {c.from_station} ({formatTimeStr(c.departure_time)}) → {c.to_station} ({formatTimeStr(c.arrival_time)})
+                          </p>
+                        </div>
+                        <div className="flex space-x-1.5 ml-2">
+                          <button
+                            onClick={() => startEditConnection(c)}
+                            className="px-2 py-1 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded font-bold transition"
+                          >
+                            Bearbeiten
+                          </button>
+                          <button
+                            onClick={() => handleDeleteConnection(c.id)}
+                            className="p-1 text-rose-500 hover:bg-rose-50 rounded transition"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex space-x-1.5 ml-2">
-                        <button
-                          onClick={() => startEditConnection(c)}
-                          className="px-2 py-1 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded font-bold transition"
-                        >
-                          Bearbeiten
-                        </button>
-                        <button
-                          onClick={() => handleDeleteConnection(c.id)}
-                          className="p-1 text-rose-500 hover:bg-rose-50 rounded transition"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
           {/* D. Add / Edit Connection Form */}
           {activeJourneyId && (
-            <form onSubmit={handleConnectionSubmit} className="border-t border-slate-100 pt-5 space-y-4">
-              <h3 className="text-xs uppercase font-extrabold tracking-wider text-slate-400">
-                {editingConnId ? 'Verbindung Bearbeiten' : 'Verbindung Hinzufügen'}
-              </h3>
-
-              {formError && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-600 text-xs font-semibold p-3 rounded-lg flex items-start space-x-2">
-                  <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-                  <span>{formError}</span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Zugnummer / ID</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="z.B. 705"
-                    value={trainNumber}
-                    onChange={(e) => setTrainNumber(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Typ</label>
-                  <select
-                    value={type}
-                    onChange={(e) => setType(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold bg-white"
-                  >
-                    {trainTypes.map(t => (
-                      <option key={`type-${t}`} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Startbahnhof</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="z.B. Berlin Hbf"
-                    value={fromStation}
-                    onChange={(e) => setFromStation(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Zielbahnhof</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="z.B. Rostock Hbf"
-                    value={toStation}
-                    onChange={(e) => setToStation(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Abfahrt (HH:MM)</label>
-                  <input
-                    type="time"
-                    required
-                    value={departureTime}
-                    onChange={(e) => setDepartureTime(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Ankunft (HH:MM)</label>
-                  <input
-                    type="time"
-                    required
-                    value={arrivalTime}
-                    onChange={(e) => setArrivalTime(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div className="flex space-x-2 pt-2">
-                <button
-                  type="submit"
-                  className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-bold py-2 rounded-lg shadow-sm transition flex items-center justify-center space-x-1.5"
-                >
-                  <Plus size={16} />
-                  <span>{editingConnId ? 'Verbindung Aktualisieren' : 'Verbindung Hinzufügen'}</span>
-                </button>
-                {editingConnId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingConnId(null);
-                      setTrainNumber('');
-                      setFromStation('');
-                      setToStation('');
-                      setDepartureTime('');
-                      setArrivalTime('');
-                      setFormError(null);
-                    }}
-                    className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg font-bold hover:bg-slate-50 transition"
-                  >
-                    Abbrechen
-                  </button>
+            <div className="space-y-4 pt-2">
+              <button
+                onClick={() => {
+                  if (isAddConnectionFormOpen && editingConnId) {
+                    setEditingConnId(null);
+                    setTrainNumber('');
+                    setFromStation('');
+                    setToStation('');
+                    setDepartureTime('');
+                    setArrivalTime('');
+                  }
+                  setIsAddConnectionFormOpen(!isAddConnectionFormOpen);
+                }}
+                className={`w-full flex items-center justify-center space-x-2 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm ${
+                  isAddConnectionFormOpen 
+                    ? 'bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200' 
+                    : 'bg-violet-600 text-white hover:bg-violet-700 shadow-violet-200'
+                }`}
+              >
+                {isAddConnectionFormOpen ? (
+                  <>
+                    <X size={16} />
+                    <span>Abbrechen</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus size={16} />
+                    <span>Verbindung hinzufügen</span>
+                  </>
                 )}
-              </div>
-            </form>
+              </button>
+
+              {isAddConnectionFormOpen && (
+                <form onSubmit={handleConnectionSubmit} className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+                  <h3 className="text-xs uppercase font-extrabold tracking-wider text-slate-400">
+                    {editingConnId ? 'Verbindung Bearbeiten' : 'Neue Verbindung Details'}
+                  </h3>
+
+                  {formError && (
+                    <div className="bg-rose-50 border border-rose-200 text-rose-600 text-xs font-semibold p-3 rounded-lg flex items-start space-x-2">
+                      <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                      <span>{formError}</span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Zugnummer / ID</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="z.B. 705"
+                        value={trainNumber}
+                        onChange={(e) => setTrainNumber(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Typ</label>
+                      <select
+                        value={type}
+                        onChange={(e) => setType(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold bg-white"
+                      >
+                        {trainTypes.map(t => (
+                          <option key={`type-${t}`} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Startbahnhof</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="z.B. Berlin Hbf"
+                        value={fromStation}
+                        onChange={(e) => setFromStation(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Zielbahnhof</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="z.B. Rostock Hbf"
+                        value={toStation}
+                        onChange={(e) => setToStation(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Abfahrt (HH:MM)</label>
+                      <input
+                        type="time"
+                        required
+                        value={departureTime}
+                        onChange={(e) => setDepartureTime(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Ankunft (HH:MM)</label>
+                      <input
+                        type="time"
+                        required
+                        value={arrivalTime}
+                        onChange={(e) => setArrivalTime(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg p-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-700 font-semibold"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex space-x-2 pt-2">
+                    <button
+                      type="submit"
+                      className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-bold py-2 rounded-lg shadow-sm transition flex items-center justify-center space-x-1.5"
+                    >
+                      <Plus size={16} />
+                      <span>{editingConnId ? 'Aktualisieren' : 'Hinzufügen'}</span>
+                    </button>
+                    {editingConnId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingConnId(null);
+                          setTrainNumber('');
+                          setFromStation('');
+                          setToStation('');
+                          setDepartureTime('');
+                          setArrivalTime('');
+                          setIsAddConnectionFormOpen(false);
+                        }}
+                        className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg font-bold hover:bg-slate-50 transition"
+                      >
+                        Abbrechen
+                      </button>
+                    )}
+                  </div>
+                </form>
+              )}
+            </div>
           )}
-        </aside>
+        </div>
+      </aside>
 
         {/* CENTER/RIGHT CANVAS: React Flow Diagram */}
         <section className="flex-1 h-full bg-slate-50 relative flex flex-col">
@@ -1123,27 +1116,39 @@ export default function App() {
                 </ReactFlow>
 
                 {/* Bottom Legend */}
-                <div className="absolute bottom-6 left-6 bg-white/95 border border-slate-200/80 shadow-md p-4 rounded-xl space-y-3 z-10 max-w-sm text-xs font-semibold backdrop-blur-sm">
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Umstiegszeit-Farbcodierung (Pfeile)</p>
-                    <div className="flex space-x-4 mt-1.5">
-                      <span className="flex items-center"><span className="w-3.5 h-3.5 rounded-full bg-emerald-500 mr-1.5"></span>Grün (&ge; {settings.exchangeTimeThresholdGreen} min)</span>
-                      <span className="flex items-center"><span className="w-3.5 h-3.5 rounded-full bg-amber-500 mr-1.5"></span>Gelb ({settings.exchangeTimeThresholdRed + 1}-{settings.exchangeTimeThresholdGreen - 1} min)</span>
-                      <span className="flex items-center"><span className="w-3.5 h-3.5 rounded-full bg-rose-500 mr-1.5"></span>Rot (&le; {settings.exchangeTimeThresholdRed} min)</span>
+                <div className="absolute bottom-6 left-6 z-10 max-w-sm flex flex-col items-start space-y-2">
+                  <button
+                    onClick={() => setIsLegendOpen(!isLegendOpen)}
+                    className="bg-white/95 border border-slate-200/80 shadow-md p-2 rounded-lg text-slate-500 hover:text-violet-600 transition flex items-center space-x-2 backdrop-blur-sm"
+                  >
+                    {isLegendOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                    <span className="text-xs font-bold uppercase tracking-wider">{isLegendOpen ? 'Legende verbergen' : 'Legende anzeigen'}</span>
+                  </button>
+
+                  {isLegendOpen && (
+                    <div className="bg-white/95 border border-slate-200/80 shadow-md p-4 rounded-xl space-y-3 font-semibold backdrop-blur-sm animate-in slide-in-from-bottom-2 duration-200">
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Umstiegszeit-Farbcodierung (Pfeile)</p>
+                        <div className="flex space-x-4 mt-1.5 text-xs">
+                          <span className="flex items-center"><span className="w-3.5 h-3.5 rounded-full bg-emerald-500 mr-1.5"></span>Grün (&ge; {settings.exchangeTimeThresholdGreen} min)</span>
+                          <span className="flex items-center"><span className="w-3.5 h-3.5 rounded-full bg-amber-500 mr-1.5"></span>Gelb ({settings.exchangeTimeThresholdRed + 1}-{settings.exchangeTimeThresholdGreen - 1} min)</span>
+                          <span className="flex items-center"><span className="w-3.5 h-3.5 rounded-full bg-rose-500 mr-1.5"></span>Rot (&le; {settings.exchangeTimeThresholdRed} min)</span>
+                        </div>
+                      </div>
+                      <div className="border-t border-slate-100 pt-2 text-xs">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Verbindungs-Typen (Header)</p>
+                        <div className="flex flex-wrap gap-2 mt-1.5 max-w-[280px]">
+                          <span className="flex items-center text-[10px] bg-zinc-900 text-white px-2 py-0.5 rounded">ICE</span>
+                          <span className="flex items-center text-[10px] bg-slate-600 text-white px-2 py-0.5 rounded">IC / EC</span>
+                          <span className="flex items-center text-[10px] bg-stone-500 text-white px-2 py-0.5 rounded">RE</span>
+                          <span className="flex items-center text-[10px] bg-stone-300 text-stone-800 px-2 py-0.5 rounded">RB</span>
+                          <span className="flex items-center text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded">S</span>
+                          <span className="flex items-center text-[10px] bg-violet-600 text-white px-2 py-0.5 rounded">Bus</span>
+                          <span className="flex items-center text-[10px] bg-red-500 text-white px-2 py-0.5 rounded">Tram</span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="border-t border-slate-100 pt-2">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Verbindungs-Typen (Header)</p>
-                    <div className="flex flex-wrap gap-2 mt-1.5 max-w-[280px]">
-                      <span className="flex items-center text-[10px] bg-zinc-900 text-white px-2 py-0.5 rounded">ICE</span>
-                      <span className="flex items-center text-[10px] bg-slate-600 text-white px-2 py-0.5 rounded">IC / EC</span>
-                      <span className="flex items-center text-[10px] bg-stone-500 text-white px-2 py-0.5 rounded">RE</span>
-                      <span className="flex items-center text-[10px] bg-stone-300 text-stone-800 px-2 py-0.5 rounded">RB</span>
-                      <span className="flex items-center text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded">S</span>
-                      <span className="flex items-center text-[10px] bg-violet-600 text-white px-2 py-0.5 rounded">Bus</span>
-                      <span className="flex items-center text-[10px] bg-red-500 text-white px-2 py-0.5 rounded">Tram</span>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </>
             )
@@ -1278,7 +1283,17 @@ export default function App() {
               </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-between items-center">
+              {activeJourneyId && (
+                <button
+                  onClick={handleDeleteJourney}
+                  className="flex items-center space-x-1.5 text-rose-500 hover:text-rose-600 font-bold text-sm transition"
+                  title="Aktive Reise löschen"
+                >
+                  <Trash2 size={16} />
+                  <span>Reise löschen</span>
+                </button>
+              )}
               <button
                 onClick={() => setIsSettingsOpen(false)}
                 className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 px-6 rounded-lg shadow-sm transition"
