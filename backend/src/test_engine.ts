@@ -1,7 +1,7 @@
 import { Connection } from './types';
 import { computeEdges, hasCycle, analyzeJourney } from './engine';
 
-console.log('--- Testing Rail Decision Planner Routing Engine ---');
+console.log('--- Testing Wegweiser Routing Engine ---');
 
 const baseTime = new Date('2026-06-04T08:00:00Z');
 

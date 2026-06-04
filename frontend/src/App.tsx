@@ -100,7 +100,7 @@ const edgeTypes = {
   connectionEdge: ConnectionEdge,
 };
 
-const trainTypes = ['ICE', 'IC', 'EC', 'RE', 'RB', 'S-Bahn', 'Bus', 'Tram'];
+const trainTypes = ['ICE', 'IC', 'EC', 'RE', 'RB', 'S', 'Bus', 'Tram'];
 
 export default function App() {
   // Settings
@@ -201,8 +201,8 @@ export default function App() {
           const origins = new Set(data.analysis.connections.map((c: any) => c.from_station));
           const destinations = new Set(data.analysis.connections.map((c: any) => c.to_station));
           
-          const naturalStarts = Array.from(origins).filter(st => !destinations.has(st));
-          const naturalEnds = Array.from(destinations).filter(st => !origins.has(st));
+          const naturalStarts = Array.from(origins).filter(st => !destinations.has(st)) as string[];
+          const naturalEnds = Array.from(destinations).filter(st => !origins.has(st)) as string[];
 
           if (naturalStarts.length > 0) setStartStation(naturalStarts[0]);
           if (naturalEnds.length > 0) setEndStation(naturalEnds[0]);
@@ -695,8 +695,8 @@ export default function App() {
             <TrendingUp size={22} className="transform rotate-45" />
           </div>
           <div>
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Rail Decision Planner</h1>
-            <p className="text-xs text-slate-400 font-medium">Verbindungsnetzwerke & Robustheit bewerten</p>
+            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Wegweiser</h1>
+            <p className="text-xs text-slate-400 font-medium">Plane deine Verbindung</p>
           </div>
         </div>
 
@@ -1157,7 +1157,7 @@ export default function App() {
                       <span className="flex items-center text-[10px] bg-slate-600 text-white px-2 py-0.5 rounded">IC / EC</span>
                       <span className="flex items-center text-[10px] bg-stone-500 text-white px-2 py-0.5 rounded">RE</span>
                       <span className="flex items-center text-[10px] bg-stone-300 text-stone-800 px-2 py-0.5 rounded">RB</span>
-                      <span className="flex items-center text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded">S-Bahn</span>
+                      <span className="flex items-center text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded">S</span>
                       <span className="flex items-center text-[10px] bg-violet-600 text-white px-2 py-0.5 rounded">Bus</span>
                       <span className="flex items-center text-[10px] bg-red-500 text-white px-2 py-0.5 rounded">Tram</span>
                     </div>

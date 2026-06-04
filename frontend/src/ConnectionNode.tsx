@@ -29,10 +29,10 @@ const formatTime = (isoString: string): string => {
 const getTrainBadgeClass = (type: string): string => {
   switch (type.toUpperCase()) {
     case 'ICE':            return 'bg-zinc-900 text-white';
-    case 'IC': case 'EC': return 'bg-slate-600 text-white';
+    case 'IC': case 'EC':  return 'bg-slate-600 text-white';
     case 'RE':             return 'bg-stone-500 text-white';
     case 'RB':             return 'bg-stone-300 text-stone-800';
-    case 'S-BAHN':         return 'bg-emerald-600 text-white';
+    case 'S':              return 'bg-emerald-600 text-white';
     case 'BUS':            return 'bg-violet-600 text-white';
     case 'TRAM':           return 'bg-red-500 text-white';
     default:               return 'bg-blue-600 text-white';

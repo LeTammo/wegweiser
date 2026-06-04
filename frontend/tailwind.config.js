@@ -12,7 +12,7 @@ export default {
           ic: '#4b5563',      // IC = dark gray
           re: '#78716c',      // RE = gray (stone-500)
           rb: '#a8a29e',      // RB = light gray (stone-400)
-          sbahn: '#10b981',   // S-Bahn = green
+          s: '#10b981',       // S-Bahn = green
           bus: '#8b5cf6',     // Bus = purple
           tram: '#ef4444',    // Tram = red
         }

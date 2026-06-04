@@ -308,5 +308,5 @@ app.post('/api/journeys/:id/connections/:connId/delay', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Rail Decision Planner backend is listening at http://localhost:${PORT}`);
+  console.log(`Wegweiser backend is listening at http://localhost:${PORT}`);
 });
