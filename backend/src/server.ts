@@ -43,6 +43,58 @@ app.post('/api/journeys', async (req, res) => {
   }
 });
 
+// POST /api/journeys/:id/duplicate - Duplicate an entire journey
+app.post('/api/journeys/:id/duplicate', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const db = await getDb();
+    const sourceJourney = await db.get('SELECT * FROM journeys WHERE id = ?', [id]);
+    if (!sourceJourney) {
+      return res.status(404).json({ error: 'Journey not found' });
+    }
+
+    const connections = (await db.all('SELECT * FROM connections WHERE journey_id = ?', [id])) as Connection[];
+
+    const newJourneyId = uuidv4();
+    const newJourneyName = `${sourceJourney.name} (Kopie)`;
+
+    // Start a transaction
+    await db.run('BEGIN TRANSACTION');
+
+    try {
+      await db.run('INSERT INTO journeys (id, name) VALUES (?, ?)', [newJourneyId, newJourneyName]);
+
+      for (const conn of connections) {
+        const newConnId = uuidv4();
+        await db.run(
+          `INSERT INTO connections (id, journey_id, train_number, type, from_station, to_station, departure_time, arrival_time, delay)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            newConnId,
+            newJourneyId,
+            conn.train_number,
+            conn.type,
+            conn.from_station,
+            conn.to_station,
+            conn.departure_time,
+            conn.arrival_time,
+            conn.delay
+          ]
+        );
+      }
+
+      await db.run('COMMIT');
+      res.status(201).json({ id: newJourneyId, name: newJourneyName });
+    } catch (err: any) {
+      await db.run('ROLLBACK');
+      throw err;
+    }
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/journeys/:id - Get journey and its analyzed graph
 app.get('/api/journeys/:id', async (req, res) => {
   const { id } = req.params;

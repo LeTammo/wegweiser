@@ -25,6 +25,7 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
+  Copy,
 } from 'lucide-react';
 
 import { ConnectionNode } from './ConnectionNode';
@@ -543,6 +544,25 @@ export default function App() {
       setIsSettingsOpen(false);
     } catch (err) {
       console.error('Failed to delete journey', err);
+    }
+  };
+
+  // Duplicate journey
+  const handleDuplicateJourney = async () => {
+    if (!activeJourneyId) return;
+    try {
+      const res = await fetch(`${API_URL}/journeys/${activeJourneyId}/duplicate`, { method: 'POST' });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Duplizieren fehlgeschlagen');
+      }
+      const newJourney = await res.json();
+      setJourneys([newJourney, ...journeys]);
+      setActiveJourneyId(newJourney.id);
+      setIsSettingsOpen(false);
+    } catch (err) {
+      console.error('Failed to duplicate journey', err);
+      alert('Reise konnte nicht kopiert werden.');
     }
   };
 
@@ -1284,16 +1304,28 @@ export default function App() {
             </div>
 
             <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-between items-center">
-              {activeJourneyId && (
-                <button
-                  onClick={handleDeleteJourney}
-                  className="flex items-center space-x-1.5 text-rose-500 hover:text-rose-600 font-bold text-sm transition"
-                  title="Aktive Reise löschen"
-                >
-                  <Trash2 size={16} />
-                  <span>Reise löschen</span>
-                </button>
-              )}
+              <div className="flex items-center space-x-4">
+                {activeJourneyId && (
+                  <>
+                    <button
+                      onClick={handleDeleteJourney}
+                      className="flex items-center space-x-1.5 text-rose-500 hover:text-rose-600 font-bold text-sm transition"
+                      title="Aktive Reise löschen"
+                    >
+                      <Trash2 size={16} />
+                      <span>Löschen</span>
+                    </button>
+                    <button
+                      onClick={handleDuplicateJourney}
+                      className="flex items-center space-x-1.5 text-slate-500 hover:text-slate-600 font-bold text-sm transition"
+                      title="Aktive Reise kopieren"
+                    >
+                      <Copy size={16} />
+                      <span>Kopieren</span>
+                    </button>
+                  </>
+                )}
+              </div>
               <button
                 onClick={() => setIsSettingsOpen(false)}
                 className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 px-6 rounded-lg shadow-sm transition"
