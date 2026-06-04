@@ -11,6 +11,8 @@ interface ConnectionNodeData {
   arrivalTime: string;
   isHighlightedFastest: boolean;
   isHighlightedSafest: boolean;
+  isDimmed: boolean;
+  showTrainNumbers: boolean;
 }
 
 const formatTime = (isoString: string): string => {
@@ -43,6 +45,7 @@ export const ConnectionNode: React.FC<{ data: ConnectionNodeData }> = ({ data })
     fromStation, toStation,
     departureTime, arrivalTime,
     isHighlightedFastest, isHighlightedSafest,
+    isDimmed, showTrainNumbers,
   } = data;
 
   const ringClass =
@@ -56,9 +59,14 @@ export const ConnectionNode: React.FC<{ data: ConnectionNodeData }> = ({ data })
 
   return (
     <div
-      className={`w-full h-[44px] bg-white border rounded-lg flex items-center px-2 gap-2 transition-all duration-200 shadow-sm ${ringClass}`}
+      className={`w-full h-[44px] bg-white border rounded-lg flex items-center px-2 gap-2 shadow-sm transition-all duration-300 ${ringClass}`}
+      style={{ opacity: isDimmed ? 0.15 : 1 }}
     >
-      <Handle type="target" position={Position.Left} style={{ width: 6, height: 6, background: '#94a3b8', border: '2px solid #fff' }} />
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{ width: 6, height: 6, background: '#94a3b8', border: '2px solid #fff' }}
+      />
 
       {/* Departure */}
       <div className="flex flex-col items-start min-w-0 flex-1">
@@ -66,9 +74,9 @@ export const ConnectionNode: React.FC<{ data: ConnectionNodeData }> = ({ data })
         <span className="text-[13px] font-black text-slate-800 leading-tight tabular-nums">{formatTime(departureTime)}</span>
       </div>
 
-      {/* Train Badge — centred, shrinks if needed */}
+      {/* Train Badge */}
       <div className={`shrink-0 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wide whitespace-nowrap ${getTrainBadgeClass(type)}`}>
-        {type} {trainNumber}
+        {type} {showTrainNumbers ? trainNumber : ''}
       </div>
 
       {/* Arrival */}
@@ -77,7 +85,11 @@ export const ConnectionNode: React.FC<{ data: ConnectionNodeData }> = ({ data })
         <span className="text-[13px] font-black text-slate-800 leading-tight tabular-nums">{formatTime(arrivalTime)}</span>
       </div>
 
-      <Handle type="source" position={Position.Right} style={{ width: 6, height: 6, background: '#94a3b8', border: '2px solid #fff' }} />
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{ width: 6, height: 6, background: '#94a3b8', border: '2px solid #fff' }}
+      />
     </div>
   );
 };

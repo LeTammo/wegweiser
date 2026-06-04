@@ -5,3 +5,5 @@ backend/rail_planner.db
 
 frontend/node_modules/
 frontend/dist
+
+.idea
