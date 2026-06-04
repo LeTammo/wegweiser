@@ -157,6 +157,11 @@ export default function App() {
   const [editingConnId, setEditingConnId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // DB Share Link state
+  const [dbShareLink, setDbShareLink] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [isImportFormOpen, setIsImportFormOpen] = useState(false);
+
   // Flow nodes and edges state
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -676,6 +681,50 @@ export default function App() {
     }
   };
 
+  const handleImportFromDb = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeJourneyId || !dbShareLink.trim()) return;
+
+    setIsImporting(true);
+    setFormError(null);
+
+    try {
+      const res = await fetch(`${API_URL}/journeys/${activeJourneyId}/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: dbShareLink }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setFormError(data.error || 'Import fehlgeschlagen.');
+      } else {
+        setDbShareLink('');
+        if (data.analysis) {
+          setAnalysis(data.analysis);
+          // Refresh stations listing
+          const uniqueStations = new Set<string>();
+          data.analysis.connections.forEach((c: DBConnection) => {
+            uniqueStations.add(c.from_station);
+            uniqueStations.add(c.to_station);
+          });
+          setStations(Array.from(uniqueStations).sort());
+        }
+        if (data.errors && data.errors.length > 0) {
+          alert(data.message + '\n\n' + data.errors.join('\n'));
+        } else {
+          alert(data.message);
+        }
+      }
+    } catch (err) {
+      setFormError('Verbindung zum Server fehlgeschlagen.');
+      console.error(err);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen w-screen bg-slate-50 text-slate-800 overflow-hidden">
       
@@ -946,7 +995,73 @@ export default function App() {
             </div>
           )}
 
-          {/* D. Add / Edit Connection Form */}
+          {/* D. Import from DB Share Link */}
+          {activeJourneyId && (
+            <div className="space-y-4 pt-2">
+              <button
+                onClick={() => {
+                  if (isImportFormOpen) {
+                    setDbShareLink('');
+                  }
+                  setIsImportFormOpen(!isImportFormOpen);
+                }}
+                className={`w-full flex items-center justify-center space-x-2 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm ${
+                  isImportFormOpen 
+                    ? 'bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200' 
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
+                }`}
+              >
+                {isImportFormOpen ? (
+                  <>
+                    <X size={16} />
+                    <span>Abbrechen</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={16} />
+                    <span>Aus DB Link importieren</span>
+                  </>
+                )}
+              </button>
+
+              {isImportFormOpen && (
+                <form onSubmit={handleImportFromDb} className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
+                  <h3 className="text-xs uppercase font-extrabold tracking-wider text-indigo-400">
+                    DB Share Link Import
+                  </h3>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">DB Share URL</label>
+                    <textarea
+                      required
+                      placeholder="https://www.bahn.de/buchung/fahrplan/suche#..."
+                      value={dbShareLink}
+                      onChange={(e) => setDbShareLink(e.target.value)}
+                      rows={3}
+                      className="w-full border border-slate-300 rounded-lg p-2 text-xs mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 font-medium bg-white"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isImporting || !dbShareLink.trim()}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold py-2 rounded-lg shadow-sm transition flex items-center justify-center space-x-1.5"
+                  >
+                    {isImporting ? (
+                      <span className="animate-pulse">Importiere...</span>
+                    ) : (
+                      <>
+                        <Sparkles size={16} />
+                        <span>Verbindungen laden</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+
+          {/* E. Add / Edit Connection Form */}
           {activeJourneyId && (
             <div className="space-y-4 pt-2">
               <button

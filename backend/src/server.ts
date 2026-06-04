@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { getDb } from './db';
 import { analyzeJourney, computeEdges, hasCycle } from './engine';
 import { Connection } from './types';
+import { parseDbShareLink } from './parser';
 
 dotenv.config();
 
@@ -236,6 +237,88 @@ app.post('/api/journeys/:id/connections', async (req, res) => {
     const analysis = analyzeJourney(updatedConns);
 
     res.status(201).json({ connection: newConn, analysis });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/journeys/:id/import - Import connections from DB share link
+app.post('/api/journeys/:id/import', async (req, res) => {
+  const { id: journeyId } = req.params;
+  const { url } = req.body;
+
+  if (!url) {
+    return res.status(400).json({ error: 'URL is required' });
+  }
+
+  try {
+    const db = await getDb();
+    const journey = await db.get('SELECT * FROM journeys WHERE id = ?', [journeyId]);
+    if (!journey) {
+      return res.status(404).json({ error: 'Journey not found' });
+    }
+
+    const parseResult = parseDbShareLink(url);
+    if (parseResult.connections.length === 0) {
+      return res.status(400).json({ error: 'No connections found in the provided URL' });
+    }
+
+    const currentConns = (await db.all('SELECT * FROM connections WHERE journey_id = ?', [journeyId])) as Connection[];
+    
+    const newConnections: Connection[] = parseResult.connections.map(conn => ({
+      id: uuidv4(),
+      journey_id: journeyId,
+      train_number: conn.trainNumber || 'Unknown',
+      type: conn.trainType || 'Zug',
+      from_station: conn.startStation,
+      to_station: conn.arrivalStation,
+      departure_time: conn.startTime.toISOString(),
+      arrival_time: conn.arrivalTime.toISOString(),
+      delay: 0
+    }));
+
+    const successfullyAdded: Connection[] = [];
+    const errors: string[] = [];
+    let combinedConns = [...currentConns];
+
+    for (const newConn of newConnections) {
+      const tempCombined = [...combinedConns, newConn];
+      const edges = computeEdges(tempCombined);
+      
+      if (hasCycle(tempCombined, edges)) {
+        errors.push(`Verbindung ${newConn.type} ${newConn.train_number} (${newConn.from_station} -> ${newConn.to_station}) übersprungen, da sie einen Zyklus erzeugen würde.`);
+        continue;
+      }
+
+      await db.run(
+        `INSERT INTO connections (id, journey_id, train_number, type, from_station, to_station, departure_time, arrival_time, delay)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          newConn.id,
+          newConn.journey_id,
+          newConn.train_number,
+          newConn.type,
+          newConn.from_station,
+          newConn.to_station,
+          newConn.departure_time,
+          newConn.arrival_time,
+          newConn.delay
+        ]
+      );
+      
+      combinedConns.push(newConn);
+      successfullyAdded.push(newConn);
+    }
+
+    const analysis = analyzeJourney(combinedConns);
+
+    res.status(201).json({ 
+      message: `Erfolgreich ${successfullyAdded.length} Verbindungen importiert.${errors.length > 0 ? ` ${errors.length} übersprungen.` : ''}`,
+      importedCount: successfullyAdded.length, 
+      skippedCount: errors.length,
+      errors,
+      analysis 
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
