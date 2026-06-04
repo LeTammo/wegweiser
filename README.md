@@ -47,17 +47,19 @@ Create a `.env` file in the `backend` directory.
 
 **Frontend (`frontend/.env`):**
 Create a `.env` file in the `frontend` directory.
-- `VITE_API_URL`: The URL of the backend API (default: `http://localhost:3001/api`, this must match the backend's host and port)
+- `VITE_API_URL`: The URL of the backend API (e.g., `http://localhost:3001/api`).
+  - **Important**: In production, this should usually be the public URL (e.g., `https://route.my.domain/api`) and must be set *before* running `npm run build` as it is baked into the frontend assets.
 
 ### Production
 
-1. Build the frontend
+1. Set `VITE_API_URL` in `frontend/.env` to your public API endpoint (e.g., `https://route.my.domain/api`).
+2. Build the frontend:
    ```bash
    cd frontend
    npm run build
    ```
-2. Serve the `dist` folder via a reverse proxy like Nginx.
-3. Build and start the backend:
+3. Serve the `dist` folder via a reverse proxy like Nginx or Caddy.
+4. Build and start the backend:
    ```bash
    cd backend
    npm run build
