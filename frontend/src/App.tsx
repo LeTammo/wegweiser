@@ -360,7 +360,7 @@ export default function App() {
       const pos = connectionPositions[conn.id] || { col: 0, row: 0, span: 1 };
       
       const COL_W_NODES = 320;
-      const width = 180 + (pos.span - 1) * COL_W_NODES;
+      const width = 200 + (pos.span - 1) * COL_W_NODES;
 
       // Highlight status
       const isHighlightedFastest = highlightedRouteType === 'fastest' && 
