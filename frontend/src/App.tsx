@@ -1128,6 +1128,7 @@ export default function App() {
                   minZoom={0.2}
                   maxZoom={1.5}
                   elevateEdgesOnSelect={true}
+                  nodesDraggable={false}
                 >
                   <Background color="#cbd5e1" gap={20} size={1.2} />
                   <Controls />
