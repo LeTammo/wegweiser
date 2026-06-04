@@ -49,12 +49,10 @@
 }
 
 .react-flow__edge-path {
-  stroke-width: 3px !important;
   transition: stroke 0.3s ease, stroke-width 0.3s ease;
 }
 
 .react-flow__edge.selected .react-flow__edge-path {
-  stroke-width: 4px !important;
 }
 
 /* Custom animations */

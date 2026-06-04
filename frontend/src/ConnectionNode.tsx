@@ -49,17 +49,11 @@ export const ConnectionNode: React.FC<{ data: ConnectionNodeData }> = ({ data })
   } = data;
 
   const ringClass =
-    isHighlightedFastest && isHighlightedSafest
-      ? 'ring-2 ring-teal-400 border-teal-400'
-      : isHighlightedFastest
-      ? 'ring-2 ring-sky-400 border-sky-400'
-      : isHighlightedSafest
-      ? 'ring-2 ring-emerald-400 border-emerald-400'
-      : 'border-slate-200';
+    isHighlightedFastest || isHighlightedSafest ? 'ring-2 ring-sky-400 border-sky-400' : 'border-slate-400';
 
   return (
     <div
-      className={`w-full h-[44px] bg-white border rounded-lg flex items-center px-2 gap-2 shadow-sm transition-all duration-300 ${ringClass}`}
+      className={`w-full bg-white border rounded-lg flex flex-col items-center px-3 py-1.5 shadow-md transition-all duration-300 ${ringClass}`}
       style={{ opacity: isDimmed ? 0.15 : 1 }}
     >
       <Handle
@@ -67,23 +61,24 @@ export const ConnectionNode: React.FC<{ data: ConnectionNodeData }> = ({ data })
         position={Position.Left}
         style={{ width: 6, height: 6, background: '#94a3b8', border: '2px solid #fff' }}
       />
+      <div className="w-full flex justify-between">
+        {/* Departure */}
+        <span className="text-[9px] text-slate-400 font-semibold leading-none">{fromStation}</span>
+        {/* Arrival */}
+        <span className="text-[9px] text-slate-400 font-semibold leading-none">{toStation}</span>
+      </div>
 
-      {/* Departure */}
-      <div className="flex flex-col items-start min-w-0 flex-1">
-        <span className="text-[9px] text-slate-400 font-semibold leading-none truncate w-full">{fromStation}</span>
+      <div className="w-full flex justify-between">
+        {/* Departure */}
         <span className="text-[13px] font-black text-slate-800 leading-tight tabular-nums">{formatTime(departureTime)}</span>
-      </div>
-
-      {/* Train Badge */}
-      <div className={`shrink-0 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wide whitespace-nowrap ${getTrainBadgeClass(type)}`}>
-        {type} {showTrainNumbers ? trainNumber : ''}
-      </div>
-
-      {/* Arrival */}
-      <div className="flex flex-col items-end min-w-0 flex-1">
-        <span className="text-[9px] text-slate-400 font-semibold leading-none truncate w-full text-right">{toStation}</span>
+        {/* Train Badge */}
+        <div className={`h-[15px] px-1 py-[2px] rounded text-[10px] leading-none font-black uppercase tracking-wide whitespace-nowrap ${getTrainBadgeClass(type)}`}>
+          {type} {showTrainNumbers ? trainNumber : ''}
+        </div>
+        {/* Arrival */}
         <span className="text-[13px] font-black text-slate-800 leading-tight tabular-nums">{formatTime(arrivalTime)}</span>
       </div>
+
 
       <Handle
         type="source"

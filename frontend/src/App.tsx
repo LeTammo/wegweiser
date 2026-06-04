@@ -87,8 +87,8 @@ interface AppSettings {
 
 const DEFAULT_SETTINGS: AppSettings = {
   showExchangeTimes: 'highlighted',
-  exchangeTimeThresholdGreen: 15,
-  exchangeTimeThresholdRed: 7,
+  exchangeTimeThresholdGreen: 20,
+  exchangeTimeThresholdRed: 9,
   showTrainNumbers: true,
 };
 
@@ -225,24 +225,6 @@ export default function App() {
     }
   }, [activeJourneyId, startStation, endStation, fetchJourneyDetails]);
 
-  // Handle delay simulation slider adjustments
-  const handleDelayChange = async (connId: string, delay: number) => {
-    if (!activeJourneyId) return;
-    try {
-      const res = await fetch(`${API_URL}/journeys/${activeJourneyId}/connections/${connId}/delay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ delay }),
-      });
-      const data = await res.json();
-      if (data.analysis) {
-        setAnalysis(data.analysis);
-      }
-    } catch (err) {
-      console.error('Failed to update delay', err);
-    }
-  };
-
   // Convert connection and edges to React Flow representations
   useEffect(() => {
     if (!analysis) {
@@ -371,8 +353,8 @@ export default function App() {
       
       // Column pitch 560px — leaves ~300px of horizontal edge space per hop
       // Card base width kept narrow (260px) so edges dominate horizontally
-      const COL_W = 560;
-      const width = 260 + (pos.span - 1) * COL_W;
+      const COL_W = 380;
+      const width = 200 + (pos.span - 1) * COL_W;
 
       // Highlight status
       const isHighlightedFastest = highlightedRouteType === 'fastest' && 
@@ -387,7 +369,7 @@ export default function App() {
         id: conn.id,
         type: 'connectionNode',
         // Row pitch 160px — cards 44px tall, 116px pure edge space per row
-        position: { x: 50 + pos.col * COL_W, y: 50 + pos.row * 160 },
+        position: { x: 50 + pos.col * COL_W, y: 50 + pos.row * 80 },
         style: { width: `${width}px` },
         data: {
           id: conn.id,
@@ -407,9 +389,9 @@ export default function App() {
 
     // 6. Generate React Flow Edges
     const formatBuffer = (mins: number): string => {
-      if (mins < 60) return `${mins}m`;
+      if (mins < 60) return `${mins} min`;
       const hours = (mins / 60).toFixed(1);
-      return `${hours.endsWith('.0') ? hours.slice(0, -2) : hours}h`;
+      return `${hours.endsWith('.0') ? hours.slice(0, -2) : hours} h`;
     };
 
     const flowEdges: Edge[] = apiEdges.map(e => {
@@ -459,7 +441,7 @@ export default function App() {
       }
 
       if (isEdgeHighlighted && e.rating !== 'Impossible') {
-        strokeColor = highlightedRouteType === 'fastest' ? '#0ea5e9' : '#059669';
+        strokeColor = highlightedRouteType === 'fastest' || highlightedRouteType === 'safest' ? '#0ea5e9' : '#059669';
       }
 
       // Calculate label position offset to avoid overlapping
@@ -503,7 +485,7 @@ export default function App() {
         labelY,
         style: {
           stroke: strokeColor,
-          strokeWidth: isEdgeHighlighted ? 5 : 3,
+          strokeWidth: isEdgeHighlighted ? 3 : 1.5,
           strokeDasharray: strokeDash,
           opacity: isDimmed ? 0.15 : 1,
           // Use zIndex to help ensure highlighted edges are on top
@@ -511,8 +493,8 @@ export default function App() {
         },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          width: 22,
-          height: 22,
+          width: 14,
+          height: 14,
           color: strokeColor,
         },
       };

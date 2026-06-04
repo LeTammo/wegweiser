@@ -1,9 +1,7 @@
-import React from 'react';
 import { getBezierPath, EdgeLabelRenderer, BaseEdge } from 'reactflow';
 import type { EdgeProps } from 'reactflow';
 
 export const ConnectionEdge = ({
-  id,
   sourceX,
   sourceY,
   targetX,
@@ -13,9 +11,6 @@ export const ConnectionEdge = ({
   style = {},
   markerEnd,
   label,
-  labelX,
-  labelY,
-  data,
 }: EdgeProps) => {
   const [edgePath, labelX_calc, labelY_calc] = getBezierPath({
     sourceX,
@@ -25,10 +20,6 @@ export const ConnectionEdge = ({
     targetY,
     targetPosition,
   });
-
-  // Use provided labelX/labelY or calculated ones
-  const lx = labelX !== undefined ? labelX : labelX_calc;
-  const ly = labelY !== undefined ? labelY : labelY_calc;
 
   const strokeColor = style.stroke || '#94a3b8';
   const isDimmed = style.opacity === 0.15;
@@ -41,11 +32,11 @@ export const ConnectionEdge = ({
           <div
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${lx}px,${ly}px)`,
+              transform: `translate(-50%, -50%) translate(${labelX_calc}px,${labelY_calc}px)`,
               background: '#ffffff',
-              padding: '5px 8px',
-              borderRadius: '8px',
-              fontSize: '13px',
+              padding: '0px 6px',
+              borderRadius: '6px',
+              fontSize: '12px',
               fontWeight: 800,
               color: strokeColor,
               border: `1.5px solid ${strokeColor}`,
