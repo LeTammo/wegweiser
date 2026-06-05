@@ -324,6 +324,129 @@ app.post('/api/journeys/:id/import', async (req, res) => {
   }
 });
 
+// POST /api/journeys/:id/ai-import - Import connections using AI (Ollama)
+app.post('/api/journeys/:id/ai-import', async (req, res) => {
+  const { id: journeyId } = req.params;
+  const { text, prompt } = req.body;
+
+  if (!text) {
+    return res.status(400).json({ error: 'Text is required' });
+  }
+
+  const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
+  const ollamaModel = process.env.OLLAMA_MODEL || 'gemma3';
+
+  try {
+    const db = await getDb();
+    const journey = await db.get('SELECT * FROM journeys WHERE id = ?', [journeyId]);
+    if (!journey) {
+      return res.status(404).json({ error: 'Journey not found' });
+    }
+
+    const response = await fetch(`${ollamaUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: ollamaModel,
+        prompt: `${prompt}\n\nInput text to parse:\n${text}`,
+        stream: false,
+        format: 'json'
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Ollama error (${response.status}): ${errorText}`);
+    }
+
+    const data: any = await response.json();
+    let aiConnections: any[];
+
+    try {
+      const content = data.response.trim();
+      aiConnections = JSON.parse(content);
+      console.log(aiConnections)
+      // Ensure it's an array
+      if (!Array.isArray(aiConnections)) {
+        if (typeof aiConnections === 'object' && aiConnections !== null) {
+          // If the model returned a single object, maybe it's { connections: [...] }
+          if (Array.isArray((aiConnections as any).connections)) {
+            aiConnections = (aiConnections as any).connections;
+          } else {
+            aiConnections = [aiConnections];
+          }
+        } else {
+          throw new Error('AI did not return a valid JSON array.');
+        }
+      }
+    } catch (parseError) {
+      console.error('Failed to parse AI response:', data.response);
+      return res.status(500).json({ error: 'Failed to parse AI response as JSON. Make sure the prompt instructs the model to return JSON.' });
+    }
+
+    const currentConns = (await db.all('SELECT * FROM connections WHERE journey_id = ?', [journeyId])) as Connection[];
+
+
+    const newConnections: Connection[] = aiConnections.map(conn => ({
+      id: uuidv4(),
+      journey_id: journeyId,
+      train_number: String(conn.trainNumber || 'Unknown'),
+      type: String(conn.type || 'Zug'),
+      from_station: String(conn.fromStation || 'Unknown'),
+      to_station: String(conn.toStation || 'Unknown'),
+      departure_time: new Date(conn.departureTime).toISOString(),
+      arrival_time: new Date(conn.arrivalTime).toISOString(),
+      delay: 0
+    }));
+
+    const successfullyAdded: Connection[] = [];
+    const errors: string[] = [];
+    let combinedConns = [...currentConns];
+
+    for (const newConn of newConnections) {
+      const tempCombined = [...combinedConns, newConn];
+      const edges = computeEdges(tempCombined);
+      
+      if (hasCycle(tempCombined, edges)) {
+        errors.push(`Verbindung ${newConn.type} ${newConn.train_number} (${newConn.from_station} -> ${newConn.to_station}) übersprungen, da sie einen Zyklus erzeugen würde.`);
+        continue;
+      }
+
+      await db.run(
+        `INSERT INTO connections (id, journey_id, train_number, type, from_station, to_station, departure_time, arrival_time, delay)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          newConn.id,
+          newConn.journey_id,
+          newConn.train_number,
+          newConn.type,
+          newConn.from_station,
+          newConn.to_station,
+          newConn.departure_time,
+          newConn.arrival_time,
+          newConn.delay
+        ]
+      );
+      
+      combinedConns.push(newConn);
+      successfullyAdded.push(newConn);
+    }
+
+    const analysis = analyzeJourney(combinedConns);
+
+    res.status(201).json({ 
+      message: `Erfolgreich ${successfullyAdded.length} Verbindungen via AI importiert.${errors.length > 0 ? ` ${errors.length} übersprungen.` : ''}`,
+      importedCount: successfullyAdded.length, 
+      skippedCount: errors.length,
+      errors,
+      analysis 
+    });
+  } catch (error: any) {
+    console.error('AI Import Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // PUT /api/journeys/:id/connections/:connId - Update connection (includes cycle check)
 app.put('/api/journeys/:id/connections/:connId', async (req, res) => {
   const { id: journeyId, connId } = req.params;

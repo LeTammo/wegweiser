@@ -87,6 +87,7 @@ interface AppSettings {
   exchangeTimeThresholdGreen: number;
   exchangeTimeThresholdRed: number;
   showTrainNumbers: boolean;
+  aiPrompt: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -94,6 +95,54 @@ const DEFAULT_SETTINGS: AppSettings = {
   exchangeTimeThresholdGreen: 20,
   exchangeTimeThresholdRed: 9,
   showTrainNumbers: true,
+  aiPrompt: '<|turn>system\n' +
+      '<|think|>Du bist ein präziser Daten-Extraktor. Deine Aufgabe ist es, alle physischen Fahrzeug-Verbindungen (Züge, Busse, Straßenbahnen) aus dem vom User bereitgestellten Reiseplan nacheinander zu extrahieren und als JSON-Array auszugeben.\n' +
+      '\n' +
+      'STATION NAME RULES (STRENG EINHALTEN):\n' +
+      '- Wende diese Kürzungsregeln konsequent auf ALLE Stationen im JSON an (sowohl für "fromStation" als auch für "toStation").\n' +
+      '- Jede Station, die "Bahnhof Rothe Erde (Bus), Aachen" oder ähnlich heißt, MUSS zwingend zu "Aachen-Rothe Erde" gekürzt werden.\n' +
+      '- Jede Station, die "Hauptbahnhof (Tram/Bus), Leipzig" oder ähnlich heißt, MUSS zwingend zu "Leipzig Hbf" gekürzt werden.\n' +
+      '- Entferne generell alle Zusätze wie "(Tram/Bus)", "(Bus)" oder "Bahnhof ... (Bus)".\n' +
+      '- Bei langen Adressen verwende nur Straße + maximal Hausnummer: "Leipzig - Zentrum, Ehrensteinstraße 40" → "Ehrensteinstraße 40".\n' +
+      '\n' +
+      'TRACK RULES:\n' +
+      '- Wenn ein Gleis angegeben ist (z.B. "Gl. 16" oder "Gleis 16") oder ein Bussteig angegeben ist (z.B. "Busstg. B"), füge das Feld "platform" hinzu (Wert: "16" oder Wert: "B").\n' +
+      '- Fehlt die Angabe, lasse das Feld weg.\n' +
+      '\n' +
+      'Gib das Ergebnis ausschließlich als JSON-Array zurück – kein Markdown, kein Text davor oder danach.\n' +
+      'Jede Verbindung hat folgende Felder:\n' +
+      '- trainNumber (z.B. "2234", "11", "35" oder "7")\n' +
+      '- type ("IC", "ICE", "RE", "Tram", "Bus", "S")\n' +
+      '- fromStation (Name der Abfahrtsstation)\n' +
+      '- toStation (Name der Zielstation)\n' +
+      '- departureTime (ISO 8601, Datum aus Kontext oder "2025-01-01" als Platzhalter)\n' +
+      '- arrivalTime (ISO 8601)\n' +
+      '- platform (Gleis/Bussteig an der Abfahrtsstation, optional)\n' +
+      '- departureTrack (Gleis/Bussteig an der Ankunftsstation, optional – relevant bei Umstieg)\n' +
+      '\n' +
+      'Wichtig: Das Muster pro Verbindung sieht meistens so aus:\n' +
+      '1. Abfahrtszeit (manchmal doppelt: [HH:MM])\n' +
+      '2. Abfahrtsstation\n' +
+      '3. Optional: Gleis- oder Bussteigangabe (z. B. "Gl. X" / "Gleis X" oder "Busstg. Y")\n' +
+      '4. Dauer der Fahrt ODER Details zum Fußweg / Umstieg\n' +
+      '5. Verkehrsmittel (z. B. "STR 11", "IC 2234", "Bus 35")\n' +
+      '6. Fahrtrichtung des Vekehrsmittels (Zeile beginnt immer mit "nach ..."). WICHTIG: Ignoriere diesen "nach"-Wert komplett für das Feld "toStation"!\n' +
+      '7. Optionale Zusatzinformationen (Auslastung, Fahrradmitnahme, Baustelleninfos)\n' +
+      '8. Ankunftszeit (manchmal doppelt: [HH:MM] \\n [HH:MM])\n' +
+      '9. Die tatsächliche Zielstation für diese Verbindung (steht direkt unter der Ankunftszeit). Nutze AUSSCHLIESSLICH diesen Namen für das Feld "toStation"!\n' +
+      '10. Optional: Gleis- oder Bussteigangabe (z. B. "Gl. X" / "Gleis X" oder "Busstg. Y")\n' +
+      '11. Umstiegszeit\n' +
+      '12. Infos zum Umstieg (bspw. "ca. 207m Fußweg")\n' +
+      '...danach fängt es wieder mit 1 an.\n' +
+      '\n' +
+      'ACHTUNG (HÄUFIGE FEHLERQUELLEN):\n' +
+      '- Die Info "nach Markkleeberg-Ost", "nach Vaals Grenze" oder "nach Aachen Hbf" (beim RE9) ist lediglich die Fahrtrichtung des Fahrzeugs. Sie darf NIEMALS als "toStation" eingetragen werden.\n' +
+      '- BEISPIEL RE9: Im Text steht "RE9 nach Aachen Hbf" und darunter "22:36 Aachen-Rothe Erde". Die korrekte "toStation" ist hier "Aachen-Rothe Erde" (und NICHT "Aachen Hbf").\n' +
+      '- Die korrekte "toStation" steht immer direkt unter der Ankunftszeit (Schritt 9).\n' +
+      '- Bitte prüfe vor der JSON-Erstellung für jedes Segment: Entspricht deine gewählte "toStation" einer Zeile, die im Text mit "nach ..." beginnt? Wenn ja, korrigiere sie durch die Station, die nach der Ankunftszeit genannt wird.\n' +
+      '- Die "trainNumber" soll immer nur die Nummer beinhalten, NIEMALS den "type" als Präfix (z.B. "9" statt "RE9").<turn|>\n' +
+      '<|turn>user\n' +
+      'Hier ist der Reiseplan:\n\n',
 };
 
 const nodeTypes = {
@@ -161,6 +210,11 @@ export default function App() {
   const [dbShareLink, setDbShareLink] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [isImportFormOpen, setIsImportFormOpen] = useState(false);
+
+  // AI Import state
+  const [aiText, setAiText] = useState('');
+  const [isAiImporting, setIsAiImporting] = useState(false);
+  const [isAiImportFormOpen, setIsAiImportFormOpen] = useState(false);
 
   // Flow nodes and edges state
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -732,6 +786,51 @@ export default function App() {
     }
   };
 
+  const handleAiImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeJourneyId || !aiText.trim()) return;
+
+    setIsAiImporting(true);
+    setFormError(null);
+
+    try {
+      const res = await fetch(`${API_URL}/journeys/${activeJourneyId}/ai-import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: aiText, prompt: settings.aiPrompt }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setFormError(data.error || 'AI Import fehlgeschlagen.');
+      } else {
+        setAiText('');
+        setIsAiImportFormOpen(false);
+        if (data.analysis) {
+          setAnalysis(data.analysis);
+          // Refresh stations listing
+          const uniqueStations = new Set<string>();
+          data.analysis.connections.forEach((c: DBConnection) => {
+            uniqueStations.add(c.from_station);
+            uniqueStations.add(c.to_station);
+          });
+          setStations(Array.from(uniqueStations).sort());
+        }
+        if (data.errors && data.errors.length > 0) {
+          alert(data.message + '\n\n' + data.errors.join('\n'));
+        } else {
+          alert(data.message);
+        }
+      }
+    } catch (err) {
+      setFormError('Verbindung zum Server fehlgeschlagen.');
+      console.error(err);
+    } finally {
+      setIsAiImporting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen w-screen bg-slate-50 text-slate-800 overflow-hidden">
       
@@ -1002,7 +1101,73 @@ export default function App() {
             </div>
           )}
 
-          {/* D. Import from DB Share Link */}
+          {/* D. AI Import */}
+          {activeJourneyId && (
+            <div className="space-y-4 pt-2">
+              <button
+                onClick={() => {
+                  if (isAiImportFormOpen) {
+                    setAiText('');
+                  }
+                  setIsAiImportFormOpen(!isAiImportFormOpen);
+                }}
+                className={`w-full flex items-center justify-center space-x-2 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm ${
+                  isAiImportFormOpen 
+                    ? 'bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200' 
+                    : 'bg-fuchsia-600 text-white hover:bg-fuchsia-700 shadow-fuchsia-200'
+                }`}
+              >
+                {isAiImportFormOpen ? (
+                  <>
+                    <X size={16} />
+                    <span>Abbrechen</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={16} />
+                    <span>KI Import</span>
+                  </>
+                )}
+              </button>
+
+              {isAiImportFormOpen && (
+                <form onSubmit={handleAiImport} className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 bg-fuchsia-50/50 p-4 rounded-xl border border-fuchsia-100">
+                  <h3 className="text-xs uppercase font-extrabold tracking-wider text-fuchsia-400">
+                    KI Text Import (Gemma 3)
+                  </h3>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Verbindungstext</label>
+                    <textarea
+                      required
+                      placeholder="Kopiere hier den Text mit deinen Verbindungen rein..."
+                      value={aiText}
+                      onChange={(e) => setAiText(e.target.value)}
+                      rows={5}
+                      className="w-full border border-slate-300 rounded-lg p-2 text-xs mt-1 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/20 text-slate-700 font-medium bg-white"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isAiImporting || !aiText.trim()}
+                    className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 disabled:bg-slate-300 text-white font-bold py-2 rounded-lg shadow-sm transition flex items-center justify-center space-x-1.5"
+                  >
+                    {isAiImporting ? (
+                      <span className="animate-pulse">KI analysiert...</span>
+                    ) : (
+                      <>
+                        <Sparkles size={16} />
+                        <span>Verbindungen extrahieren</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+
+          {/* E. Import from DB Share Link */}
           {activeJourneyId && (
             <div className="space-y-4 pt-2">
               <button
@@ -1423,6 +1588,22 @@ export default function App() {
                     }`}
                   />
                 </button>
+              </div>
+
+              {/* AI Prompt Configuration */}
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-1.5">
+                  <Sparkles size={12} />
+                  <span>KI Prompt Konfiguration</span>
+                </label>
+                <p className="text-[11px] text-slate-500 font-medium">Anweisungen für das KI-Modell zur Datenextraktion</p>
+                <textarea
+                  value={settings.aiPrompt}
+                  onChange={(e) => setSettings({ ...settings, aiPrompt: e.target.value })}
+                  rows={4}
+                  className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-violet-500/10 text-slate-700 font-medium bg-slate-50/50"
+                  placeholder="Gib hier den System-Prompt für die KI ein..."
+                />
               </div>
             </div>
 
